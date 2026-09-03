@@ -1,0 +1,128 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:fillViewport="true">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:padding="16dp">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:background="@drawable/bg_stat_card"
+            android:orientation="vertical"
+            android:padding="20dp">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:gravity="center_horizontal"
+                android:orientation="vertical">
+
+                <TextView
+                    android:id="@+id/tvAvatar"
+                    android:layout_width="56dp"
+                    android:layout_height="56dp"
+                    android:background="@drawable/bg_kpi_icon"
+                    android:gravity="center"
+                    android:textColor="@color/text_on_primary"
+                    android:textSize="22sp"
+                    android:textStyle="bold"/>
+
+                <TextView
+                    android:id="@+id/tvName"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="10dp"
+                    android:textColor="@color/text_primary"
+                    android:textSize="18sp"
+                    android:textStyle="bold"/>
+
+                <TextView
+                    android:id="@+id/tvPhone"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="4dp"
+                    android:textColor="@color/text_secondary"
+                    android:textSize="13sp"/>
+            </LinearLayout>
+
+            <View
+                android:layout_width="match_parent"
+                android:layout_height="1dp"
+                android:layout_marginVertical="14dp"
+                android:background="@color/divider"/>
+
+            <include
+                android:id="@+id/rowTotal"
+                layout="@layout/item_top_caller_row"/>
+
+            <include
+                android:id="@+id/rowIncoming"
+                layout="@layout/item_top_caller_row"/>
+
+            <include
+                android:id="@+id/rowOutgoing"
+                layout="@layout/item_top_caller_row"/>
+
+            <include
+                android:id="@+id/rowMissed"
+                layout="@layout/item_top_caller_row"/>
+
+            <include
+                android:id="@+id/rowNotPicked"
+                layout="@layout/item_top_caller_row"/>
+
+            <include
+                android:id="@+id/rowRejected"
+                layout="@layout/item_top_caller_row"/>
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="16dp"
+                android:gravity="center"
+                android:orientation="horizontal">
+
+                <ImageButton
+                    android:id="@+id/btnCall"
+                    android:layout_width="48dp"
+                    android:layout_height="48dp"
+                    android:layout_marginHorizontal="12dp"
+                    android:background="@drawable/bg_action_btn"
+                    android:contentDescription="Call"
+                    android:padding="10dp"
+                    android:src="@drawable/ic_call"
+                    app:tint="@color/outgoing_blue"/>
+
+                <ImageButton
+                    android:id="@+id/btnSms"
+                    android:layout_width="48dp"
+                    android:layout_height="48dp"
+                    android:layout_marginHorizontal="12dp"
+                    android:background="@drawable/bg_action_btn"
+                    android:contentDescription="SMS"
+                    android:padding="10dp"
+                    android:src="@drawable/ic_sms"
+                    app:tint="@color/syncpedia_orange"/>
+
+                <ImageButton
+                    android:id="@+id/btnWhatsapp"
+                    android:layout_width="48dp"
+                    android:layout_height="48dp"
+                    android:layout_marginHorizontal="12dp"
+                    android:background="@drawable/bg_action_btn"
+                    android:contentDescription="WhatsApp"
+                    android:padding="10dp"
+                    android:src="@drawable/ic_whatsapp"
+                    app:tint="@color/incoming_green"/>
+            </LinearLayout>
+        </LinearLayout>
+    </LinearLayout>
+</ScrollView>

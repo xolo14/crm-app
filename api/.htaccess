@@ -1,0 +1,19 @@
+RewriteEngine On
+
+# Map clean Retrofit paths → PHP scripts
+RewriteRule ^auth/login/?$ auth/login.php [L,QSA]
+RewriteRule ^leads/?$ leads/index.php [L,QSA]
+RewriteRule ^calls/upload/?$ calls/upload.php [L,QSA]
+RewriteRule ^calls/?$ calls/index.php [L,QSA]
+RewriteRule ^location/?$ location.php [L,QSA]
+RewriteRule ^analytics/?$ analytics/index.php [L,QSA]
+
+# Block direct access to config / storage / vendor internals
+RewriteRule ^config\.php$ - [F,L]
+RewriteRule ^storage/ - [F,L]
+
+# PHP settings hint for Hostinger
+<IfModule mod_php.c>
+  php_value upload_max_filesize 25M
+  php_value post_max_size 30M
+</IfModule>

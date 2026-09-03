@@ -1,0 +1,11 @@
+/config.php
+/storage/rate_limits/*
+!/storage/rate_limits/.gitkeep
+/storage/logs/*
+!/storage/logs/.gitkeep
+/uploads/recordings/*
+!/uploads/recordings/.gitkeep
+.env
+*.log
+# Prefer committing vendor for Hostinger; uncomment to exclude:
+# /vendor/

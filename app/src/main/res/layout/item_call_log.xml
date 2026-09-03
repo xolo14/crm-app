@@ -1,0 +1,183 @@
+<?xml version="1.0" encoding="utf-8"?>
+<androidx.constraintlayout.widget.ConstraintLayout
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:background="@color/bg_dark"
+    android:paddingHorizontal="16dp"
+    android:paddingTop="10dp"
+    android:paddingBottom="4dp">
+
+    <FrameLayout
+        android:id="@+id/avatarContainer"
+        android:layout_width="48dp"
+        android:layout_height="48dp"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toTopOf="parent">
+
+        <View
+            android:id="@+id/avatarBg"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:background="@drawable/bg_badge_blue"/>
+
+        <ImageView
+            android:id="@+id/ivCallType"
+            android:layout_width="24dp"
+            android:layout_height="24dp"
+            android:layout_gravity="center"
+            android:contentDescription="@null"
+            android:src="@drawable/ic_incoming"/>
+    </FrameLayout>
+
+    <LinearLayout
+        android:id="@+id/nameBlock"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="12dp"
+        android:layout_marginEnd="8dp"
+        android:orientation="vertical"
+        app:layout_constraintEnd_toStartOf="@id/tvTime"
+        app:layout_constraintStart_toEndOf="@id/avatarContainer"
+        app:layout_constraintTop_toTopOf="@id/avatarContainer">
+
+        <TextView
+            android:id="@+id/tvName"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:ellipsize="end"
+            android:maxLines="1"
+            android:textColor="@color/text_primary"
+            android:textSize="15sp"
+            android:textStyle="bold"/>
+
+        <TextView
+            android:id="@+id/tvPhone"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:ellipsize="end"
+            android:maxLines="1"
+            android:textColor="@color/text_muted"
+            android:textSize="13sp"/>
+    </LinearLayout>
+
+    <TextView
+        android:id="@+id/tvTime"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginEnd="8dp"
+        android:textColor="@color/text_muted"
+        android:textSize="12sp"
+        app:layout_constraintBottom_toBottomOf="@id/nameBlock"
+        app:layout_constraintEnd_toStartOf="@id/tvDuration"
+        app:layout_constraintTop_toTopOf="@id/nameBlock"/>
+
+    <TextView
+        android:id="@+id/tvDuration"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginEnd="8dp"
+        android:textColor="@color/text_secondary"
+        android:textSize="12sp"
+        app:layout_constraintBottom_toBottomOf="@id/nameBlock"
+        app:layout_constraintEnd_toStartOf="@id/tvBadge"
+        app:layout_constraintTop_toTopOf="@id/nameBlock"/>
+
+    <TextView
+        android:id="@+id/tvBadge"
+        android:layout_width="20dp"
+        android:layout_height="20dp"
+        android:layout_marginEnd="8dp"
+        android:background="@drawable/bg_badge_blue"
+        android:gravity="center"
+        android:text="1"
+        android:textColor="@color/text_primary"
+        android:textSize="10sp"
+        android:textStyle="bold"
+        app:layout_constraintBottom_toBottomOf="@id/nameBlock"
+        app:layout_constraintEnd_toStartOf="@id/btnCall"
+        app:layout_constraintTop_toTopOf="@id/nameBlock"/>
+
+    <ImageButton
+        android:id="@+id/btnCall"
+        android:layout_width="36dp"
+        android:layout_height="36dp"
+        android:background="@drawable/bg_action_btn"
+        android:contentDescription="@string/calls"
+        android:padding="8dp"
+        android:scaleType="centerInside"
+        android:src="@drawable/ic_call"
+        app:layout_constraintBottom_toBottomOf="@id/nameBlock"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintTop_toTopOf="@id/nameBlock"
+        app:tint="@color/syncpedia_teal"/>
+
+    <LinearLayout
+        android:id="@+id/actionRow"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:orientation="horizontal"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="@id/nameBlock"
+        app:layout_constraintTop_toBottomOf="@id/avatarContainer">
+
+        <ImageButton
+            android:id="@+id/btnCopy"
+            android:layout_width="36dp"
+            android:layout_height="36dp"
+            android:layout_marginEnd="8dp"
+            android:background="@drawable/bg_action_btn"
+            android:contentDescription="Copy"
+            android:padding="9dp"
+            android:scaleType="centerInside"
+            android:src="@drawable/ic_copy"
+            app:tint="@color/text_secondary"/>
+
+        <ImageButton
+            android:id="@+id/btnSms"
+            android:layout_width="36dp"
+            android:layout_height="36dp"
+            android:layout_marginEnd="8dp"
+            android:background="@drawable/bg_action_btn"
+            android:contentDescription="SMS"
+            android:padding="9dp"
+            android:scaleType="centerInside"
+            android:src="@drawable/ic_sms"
+            app:tint="@color/text_secondary"/>
+
+        <ImageButton
+            android:id="@+id/btnWhatsapp"
+            android:layout_width="36dp"
+            android:layout_height="36dp"
+            android:layout_marginEnd="8dp"
+            android:background="@drawable/bg_action_btn"
+            android:contentDescription="WhatsApp"
+            android:padding="9dp"
+            android:scaleType="centerInside"
+            android:src="@drawable/ic_whatsapp"
+            app:tint="@color/text_secondary"/>
+
+        <ImageButton
+            android:id="@+id/btnNote"
+            android:layout_width="36dp"
+            android:layout_height="36dp"
+            android:background="@drawable/bg_action_btn"
+            android:contentDescription="Note"
+            android:padding="9dp"
+            android:scaleType="centerInside"
+            android:src="@drawable/ic_note"
+            app:tint="@color/text_secondary"/>
+    </LinearLayout>
+
+    <View
+        android:layout_width="0dp"
+        android:layout_height="1dp"
+        android:layout_marginTop="10dp"
+        android:background="@color/divider"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toBottomOf="@id/actionRow"/>
+
+</androidx.constraintlayout.widget.ConstraintLayout>

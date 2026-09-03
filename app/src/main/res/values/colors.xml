@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Website-aligned light CRM + Syncpedia logo colors -->
+    <color name="bg_dark">#F7F9F8</color>
+    <color name="bg_page">#F7F9F8</color>
+    <color name="bg_card">#FFFFFF</color>
+    <color name="bg_card2">#F0F4F2</color>
+    <color name="bg_toolbar">#142E26</color>
+    <color name="bg_sidebar">#142E26</color>
+
+    <!-- Logo / brand -->
+    <color name="syncpedia_teal">#26A67D</color>
+    <color name="syncpedia_blue">#378ADD</color>
+    <color name="syncpedia_orange">#FF6200</color>
+    <color name="logo_teal">#26A67D</color>
+    <color name="logo_blue">#378ADD</color>
+    <color name="logo_orange">#FF6200</color>
+
+    <color name="tab_selected">#26A67D</color>
+    <color name="tab_unselected">#1A2A2E</color>
+
+    <color name="text_primary">#1A2A2E</color>
+    <color name="text_secondary">#5C6F6A</color>
+    <color name="text_muted">#8A9A96</color>
+    <color name="text_on_primary">#FFFFFF</color>
+    <color name="text_on_toolbar">#FFFFFF</color>
+
+    <color name="incoming_green">#26A67D</color>
+    <color name="outgoing_blue">#378ADD</color>
+    <color name="missed_red">#E53935</color>
+    <color name="rejected_red">#D81B60</color>
+    <color name="divider">#E5EBE8</color>
+
+    <color name="orange_warning">#FF6200</color>
+    <color name="banner_bg">#FFF3E0</color>
+    <color name="logout_red">#E53935</color>
+    <color name="nav_bg">#FFFFFF</color>
+
+    <color name="status_new">#378ADD</color>
+    <color name="status_contacted">#F5A623</color>
+    <color name="status_not_answered">#90A4AE</color>
+    <color name="status_messaged">#29B6F6</color>
+    <color name="status_qualified">#26C6DA</color>
+    <color name="status_interested">#26A67D</color>
+    <color name="status_demo_scheduled">#5C6BC0</color>
+    <color name="status_demo_attended">#AB47BC</color>
+    <color name="status_converted">#2E7D32</color>
+    <color name="status_lost">#E53935</color>
+    <color name="chart_not_picked">#FF6200</color>
+    <color name="ic_launcher_background">#142E26</color>
+
+    <!-- Login screen (dark branded) — matches Syncpedia login look -->
+    <color name="login_bg">#0D0D0D</color>
+    <color name="login_card">#1A1A1A</color>
+    <color name="login_title">#9AA8B5</color>
+    <color name="login_subtitle">#8A9A96</color>
+    <color name="login_field_text">#E8EEEC</color>
+</resources>

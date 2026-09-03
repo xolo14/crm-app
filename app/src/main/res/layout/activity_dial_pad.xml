@@ -1,0 +1,147 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/bg_page"
+    android:orientation="vertical"
+    android:paddingHorizontal="24dp"
+    android:paddingTop="24dp"
+    android:paddingBottom="28dp">
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:gravity="center"
+        android:letterSpacing="0.06"
+        android:text="SYNCPEDIA DIALER"
+        android:textColor="@color/syncpedia_teal"
+        android:textSize="12sp"
+        android:textStyle="bold"/>
+
+    <TextView
+        android:id="@+id/tvDialNumber"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="28dp"
+        android:ellipsize="start"
+        android:gravity="center"
+        android:minHeight="48dp"
+        android:singleLine="true"
+        android:textColor="@color/text_primary"
+        android:textSize="32sp"
+        android:textStyle="bold"/>
+
+    <TextView
+        android:id="@+id/tvDialHint"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:gravity="center"
+        android:text="Enter number"
+        android:textColor="@color/text_muted"
+        android:textSize="13sp"/>
+
+    <GridLayout
+        android:id="@+id/keypad"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_marginTop="20dp"
+        android:layout_weight="1"
+        android:alignmentMode="alignBounds"
+        android:columnCount="3"
+        android:rowCount="4"
+        android:useDefaultMargins="true">
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/key1"
+            style="@style/DialKey"
+            android:text="1"/>
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/key2"
+            style="@style/DialKey"
+            android:text="2"/>
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/key3"
+            style="@style/DialKey"
+            android:text="3"/>
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/key4"
+            style="@style/DialKey"
+            android:text="4"/>
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/key5"
+            style="@style/DialKey"
+            android:text="5"/>
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/key6"
+            style="@style/DialKey"
+            android:text="6"/>
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/key7"
+            style="@style/DialKey"
+            android:text="7"/>
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/key8"
+            style="@style/DialKey"
+            android:text="8"/>
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/key9"
+            style="@style/DialKey"
+            android:text="9"/>
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/keyStar"
+            style="@style/DialKey"
+            android:text="*"/>
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/key0"
+            style="@style/DialKey"
+            android:text="0"/>
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/keyHash"
+            style="@style/DialKey"
+            android:text="#"/>
+    </GridLayout>
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:gravity="center"
+        android:orientation="horizontal"
+        android:paddingTop="8dp">
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnDialClose"
+            style="@style/Widget.MaterialComponents.Button.TextButton"
+            android:layout_width="wrap_content"
+            android:layout_height="56dp"
+            android:text="Close"
+            android:textAllCaps="false"
+            android:textColor="@color/text_secondary"/>
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnDialCall"
+            android:layout_width="72dp"
+            android:layout_height="72dp"
+            android:layout_marginHorizontal="28dp"
+            android:backgroundTint="@color/syncpedia_teal"
+            android:insetTop="0dp"
+            android:insetBottom="0dp"
+            android:text=""
+            app:cornerRadius="36dp"
+            app:icon="@drawable/ic_call"
+            app:iconGravity="textStart"
+            app:iconPadding="0dp"
+            app:iconSize="28dp"
+            app:iconTint="@color/text_on_primary"/>
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnDialBackspace"
+            style="@style/Widget.MaterialComponents.Button.TextButton"
+            android:layout_width="wrap_content"
+            android:layout_height="56dp"
+            android:text="⌫"
+            android:textAllCaps="false"
+            android:textColor="@color/text_primary"
+            android:textSize="22sp"/>
+    </LinearLayout>
+</LinearLayout>

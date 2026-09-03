@@ -1,0 +1,24 @@
+# Built for Android Studio / Gradle
+.gradle/
+build/
+**/build/
+local.properties
+*.iml
+.idea/
+.DS_Store
+captures/
+*.apk
+*.aab
+*.ap_
+*.dex
+*.class
+bin/
+gen/
+out/
+.externalNativeBuild/
+.cxx/
+*.jks
+*.keystore
+api/config.php
+# Keep api/vendor committed for Hostinger deploys without Composer SSH access
+# api/vendor/
