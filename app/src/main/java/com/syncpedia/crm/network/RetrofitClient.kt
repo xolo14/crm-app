@@ -16,12 +16,14 @@ import java.util.concurrent.TimeUnit
  */
 object RetrofitClient {
     private var _api: ApiService? = null
+    private var _client: OkHttpClient? = null
     private lateinit var session: SessionManager
 
     /**
-     * SPKI pin for crm.syncpedia.in (leaf public key SHA-256).
-     * Re-compute after certificate rotation:
-     *   openssl s_client -connect crm.syncpedia.in:443 -servername crm.syncpedia.in </dev/null 2>/dev/null \
+     * SPKI pins for crm.syncpedia.in: leaf + its issuing intermediate CA, so a future
+     * leaf renewal from the same CA doesn't require an app update. Re-compute after
+     * a CA change with:
+     *   openssl s_client -connect crm.syncpedia.in:443 -servername crm.syncpedia.in -showcerts </dev/null 2>/dev/null \
      *     | openssl x509 -pubkey -noout \
      *     | openssl pkey -pubin -outform der \
      *     | openssl dgst -sha256 -binary \
@@ -29,17 +31,23 @@ object RetrofitClient {
      *
      * Placeholder form (DO NOT ship): sha256/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
      */
-    private const val CERT_PIN = "sha256/nxjYOvBymwjAHakCts4YC2RBtESbjjQkLOg/KcjYUpQ="
+    private const val CERT_PIN_LEAF = "sha256/GiEwp7irU6BX3DIMlfJi5jNJfMB64zvl7SlGott33pk="
+    private const val CERT_PIN_INTERMEDIATE = "sha256/brzvtCELCIZUo4sD/qPX0ccRtPsd3DY6RfmxpOU9oB4="
 
     fun init(session: SessionManager) {
         this.session = session
         _api = null
+        _client = null
     }
 
     val api: ApiService
         get() = _api ?: buildApi().also { _api = it }
 
-    private fun buildApi(): ApiService {
+    /** The pinned, authenticated client — reuse this for any hand-rolled request (e.g. LoginActivity.rawLogin). */
+    val okHttpClient: OkHttpClient
+        get() = _client ?: buildClient().also { _client = it }
+
+    private fun buildClient(): OkHttpClient {
         val logging = HttpLoggingInterceptor().apply {
             level = if (BuildConfig.DEBUG) {
                 HttpLoggingInterceptor.Level.BASIC
@@ -55,9 +63,10 @@ object RetrofitClient {
             chain.proceed(req)
         }
         val certificatePinner = CertificatePinner.Builder()
-            .add("crm.syncpedia.in", CERT_PIN)
+            .add("crm.syncpedia.in", CERT_PIN_LEAF)
+            .add("crm.syncpedia.in", CERT_PIN_INTERMEDIATE)
             .build()
-        val client = OkHttpClient.Builder()
+        return OkHttpClient.Builder()
             .certificatePinner(certificatePinner)
             .connectTimeout(30, TimeUnit.SECONDS)
             .readTimeout(60, TimeUnit.SECONDS)
@@ -67,9 +76,12 @@ object RetrofitClient {
             .addInterceptor(logging)
             .addInterceptor(SessionExpiryInterceptor(session))
             .build()
+    }
+
+    private fun buildApi(): ApiService {
         return Retrofit.Builder()
             .baseUrl("https://crm.syncpedia.in/api/")
-            .client(client)
+            .client(okHttpClient)
             .addConverterFactory(GsonConverterFactory.create())
             .build()
             .create(ApiService::class.java)
