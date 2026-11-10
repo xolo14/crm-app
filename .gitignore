@@ -19,6 +19,7 @@ out/
 .cxx/
 *.jks
 *.keystore
+release-keystore-CREDENTIALS.txt
 api/config.php
 # Keep api/vendor committed for Hostinger deploys without Composer SSH access
 # api/vendor/
