@@ -6,14 +6,14 @@ plugins {
 
 android {
     namespace 'com.syncpedia.crm'
-    compileSdk 34
+    compileSdk 36
 
     defaultConfig {
         applicationId "com.syncpedia.crm"
         minSdk 26
-        targetSdk 34
-        versionCode 2
-        versionName "1.0.1"
+        targetSdk 36
+        versionCode 6
+        versionName "1.0.5"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
     }
 
@@ -41,12 +41,9 @@ android {
             shrinkResources true
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'),
                     'proguard-rules.pro'
-            // Sideload-friendly: use debug keystore when no release.jks is configured
-            if (signingConfigs.release.storeFile != null) {
-                signingConfig signingConfigs.release
-            } else {
-                signingConfig signingConfigs.debug
-            }
+            // Play rejects debug-signed release builds — never fall back silently.
+            // See the taskGraph check below, which fails the build loudly instead.
+            signingConfig signingConfigs.release
         }
     }
 
@@ -67,6 +64,29 @@ android {
     applicationVariants.all { variant ->
         variant.outputs.all { output ->
             outputFileName = "CRM Syncpedia-${variant.versionName}.apk"
+        }
+    }
+}
+
+// Fail the build loudly if a release artifact is requested without a real release
+// keystore configured — Play Console rejects debug-signed release builds, and silently
+// falling back to the debug keystore (the old behavior) produces an unshippable .aab/.apk
+// without any warning. Only gates actual release assemble/bundle/sign tasks, not every task.
+gradle.taskGraph.whenReady { graph ->
+    def buildingRelease = graph.allTasks.any { t ->
+        def n = t.name
+        n.contains("Release") && (n.startsWith("assemble") || n.startsWith("bundle") || n.startsWith("package") || n.startsWith("sign"))
+    }
+    if (buildingRelease) {
+        def ksPath = System.getenv("KEYSTORE_PATH") ?: "release.jks"
+        def ks = file(ksPath)
+        if (!ks.exists()) {
+            throw new GradleException(
+                "Release signing is not configured: '${ksPath}' not found. " +
+                "Set KEYSTORE_PATH/KEYSTORE_PASS/KEY_ALIAS/KEY_PASS env vars (or place release.jks " +
+                "at the repo root) before building a release artifact. Play Console rejects " +
+                "debug-signed .aab/.apk uploads — see CHANGELOG-AUDIT.md."
+            )
         }
     }
 }
@@ -102,6 +122,11 @@ dependencies {
 
     // Location
     implementation 'com.google.android.gms:play-services-location:21.2.0'
+
+    // Google Sign-In (ID token sent to auth.php?action=google_login)
+    implementation 'androidx.credentials:credentials:1.3.0'
+    implementation 'androidx.credentials:credentials-play-services-auth:1.3.0'
+    implementation 'com.google.android.libraries.identity.googleid:googleid:1.1.1'
 
     // Encrypted session storage
     implementation 'androidx.security:security-crypto:1.0.0'
