@@ -12,8 +12,8 @@ android {
         applicationId "com.syncpedia.crm"
         minSdk 26
         targetSdk 36
-        versionCode 6
-        versionName "1.0.5"
+        versionCode 7
+        versionName "1.0.6"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
     }
 
@@ -143,9 +143,4 @@ dependencies {
 
     // Gson
     implementation 'com.google.code.gson:gson:2.10.1'
-
-    // LAME MP3 encoder kept for legacy recordings / CallRecorder helpers
-    implementation('com.github.naman14:TAndroidLame:1.1') {
-        exclude group: 'com.android.support'
-    }
 }
