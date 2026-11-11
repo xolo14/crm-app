@@ -369,55 +369,98 @@ class CallRecordingsActivity : AppCompatActivity() {
         }
     }
 
+    private var pendingSave: CallRecorder.RecordingItem? = null
+
+    private val storagePermission = registerForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        val item = pendingSave
+        pendingSave = null
+        if (granted && item != null) {
+            saveToDownloads(item)
+        } else if (item != null) {
+            Toast.makeText(this, "Storage permission is needed to save to Downloads", Toast.LENGTH_LONG).show()
+        }
+    }
+
     private fun saveToDownloads(item: CallRecorder.RecordingItem) {
         val file = File(item.path)
         if (!file.exists()) {
             Toast.makeText(this, "Recording file not found", Toast.LENGTH_SHORT).show()
             return
         }
-        try {
-            val fileName = file.name
-            val mimeType = if (fileName.endsWith(".mp3", ignoreCase = true)) "audio/mpeg" else "audio/*"
-
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                val values = ContentValues().apply {
-                    put(MediaStore.MediaColumns.DISPLAY_NAME, fileName)
-                    put(MediaStore.MediaColumns.MIME_TYPE, mimeType)
-                    put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS)
-                    put(MediaStore.MediaColumns.IS_PENDING, 1)
-                }
-
-                val resolver = contentResolver
-                val uri = resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
-                if (uri != null) {
-                    resolver.openOutputStream(uri)?.use { outStream ->
-                        file.inputStream().use { inStream ->
-                            inStream.copyTo(outStream)
-                        }
-                    }
-                    values.clear()
-                    values.put(MediaStore.MediaColumns.IS_PENDING, 0)
-                    resolver.update(uri, values, null, null)
-                    Toast.makeText(this, "Saved to Downloads: $fileName", Toast.LENGTH_LONG).show()
-                } else {
-                    Toast.makeText(this, "Failed to create entry in Downloads", Toast.LENGTH_SHORT).show()
-                }
-            } else {
-                val downloadsDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
-                if (downloadsDir != null) {
-                    downloadsDir.mkdirs()
-                    val dest = File(downloadsDir, fileName)
-                    file.copyTo(dest, overwrite = true)
-                    MediaScannerConnection.scanFile(this, arrayOf(dest.absolutePath), arrayOf(mimeType), null)
-                    Toast.makeText(this, "Saved to Downloads: ${dest.name}", Toast.LENGTH_LONG).show()
-                } else {
-                    Toast.makeText(this, "Downloads folder unavailable", Toast.LENGTH_SHORT).show()
-                }
-            }
-        } catch (e: Exception) {
-            Log.e(TAG, "Save to Downloads failed: ${e.message}", e)
-            Toast.makeText(this, "Could not save to Downloads: ${e.message}", Toast.LENGTH_SHORT).show()
+        // Android 8–9 need the legacy storage permission to write to the public Downloads folder.
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q &&
+            androidx.core.content.ContextCompat.checkSelfPermission(
+                this, android.Manifest.permission.WRITE_EXTERNAL_STORAGE
+            ) != android.content.pm.PackageManager.PERMISSION_GRANTED
+        ) {
+            pendingSave = item
+            storagePermission.launch(android.Manifest.permission.WRITE_EXTERNAL_STORAGE)
+            return
         }
+        val fileName = publicFileName(item, file)
+        val mimeType = when (file.extension.lowercase(Locale.US)) {
+            "mp3" -> "audio/mpeg"
+            "wav" -> "audio/wav"
+            else -> "audio/mp4"
+        }
+        val subDir = "Syncpedia CRM"
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            val resolver = contentResolver
+            val values = ContentValues().apply {
+                put(MediaStore.MediaColumns.DISPLAY_NAME, fileName)
+                put(MediaStore.MediaColumns.MIME_TYPE, mimeType)
+                put(MediaStore.MediaColumns.RELATIVE_PATH, "${Environment.DIRECTORY_DOWNLOADS}/$subDir")
+                put(MediaStore.MediaColumns.IS_PENDING, 1)
+            }
+            val uri = try {
+                resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
+            } catch (e: Exception) {
+                Log.e(TAG, "MediaStore insert failed: ${e.message}", e)
+                null
+            }
+            if (uri == null) {
+                Toast.makeText(this, "Failed to create entry in Downloads", Toast.LENGTH_SHORT).show()
+                return
+            }
+            try {
+                val out = resolver.openOutputStream(uri) ?: throw java.io.IOException("No output stream")
+                out.use { o -> file.inputStream().use { it.copyTo(o) } }
+                values.clear()
+                values.put(MediaStore.MediaColumns.IS_PENDING, 0)
+                resolver.update(uri, values, null, null)
+                Toast.makeText(this, "Saved to Downloads/$subDir/$fileName", Toast.LENGTH_LONG).show()
+            } catch (e: Exception) {
+                // Don't leave a half-written, pending entry behind.
+                try { resolver.delete(uri, null, null) } catch (_: Exception) {}
+                Log.e(TAG, "Save to Downloads failed: ${e.message}", e)
+                Toast.makeText(this, "Could not save to Downloads: ${e.message}", Toast.LENGTH_SHORT).show()
+            }
+        } else {
+            try {
+                @Suppress("DEPRECATION")
+                val dir = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), subDir)
+                dir.mkdirs()
+                val dest = File(dir, fileName)
+                file.copyTo(dest, overwrite = true)
+                MediaScannerConnection.scanFile(this, arrayOf(dest.absolutePath), arrayOf(mimeType), null)
+                Toast.makeText(this, "Saved to Downloads/$subDir/${dest.name}", Toast.LENGTH_LONG).show()
+            } catch (e: Exception) {
+                Log.e(TAG, "Save to Downloads failed: ${e.message}", e)
+                Toast.makeText(this, "Could not save to Downloads: ${e.message}", Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+
+    /** e.g. "Raghava_2026-11-10_16-28-05.m4a" so the file is recognisable in a file manager. */
+    private fun publicFileName(item: CallRecorder.RecordingItem, file: File): String {
+        val who = item.contactName.ifBlank { item.phone }.ifBlank { item.digits }.ifBlank { "Call" }
+            .replace(Regex("[^A-Za-z0-9+_-]+"), "_").trim('_').take(40).ifBlank { "Call" }
+        val ts = item.startedAtMs.takeIf { it > 0 } ?: item.endedAtMs.takeIf { it > 0 } ?: file.lastModified()
+        val stamp = java.text.SimpleDateFormat("yyyy-MM-dd_HH-mm-ss", Locale.US).format(java.util.Date(ts))
+        val ext = file.extension.ifBlank { "m4a" }
+        return "${who}_$stamp.$ext"
     }
 
     private fun confirmDelete(item: CallRecorder.RecordingItem) {
