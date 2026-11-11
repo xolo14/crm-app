@@ -2,7 +2,6 @@ package com.syncpedia.crm.network
 
 import com.syncpedia.crm.BuildConfig
 import com.syncpedia.crm.utils.SessionManager
-import okhttp3.CertificatePinner
 import okhttp3.Interceptor
 import okhttp3.OkHttpClient
 import okhttp3.logging.HttpLoggingInterceptor
@@ -19,20 +18,8 @@ object RetrofitClient {
     private var _client: OkHttpClient? = null
     private lateinit var session: SessionManager
 
-    /**
-     * SPKI pins for crm.syncpedia.in: leaf + its issuing intermediate CA, so a future
-     * leaf renewal from the same CA doesn't require an app update. Re-compute after
-     * a CA change with:
-     *   openssl s_client -connect crm.syncpedia.in:443 -servername crm.syncpedia.in -showcerts </dev/null 2>/dev/null \
-     *     | openssl x509 -pubkey -noout \
-     *     | openssl pkey -pubin -outform der \
-     *     | openssl dgst -sha256 -binary \
-     *     | openssl enc -base64
-     *
-     * Placeholder form (DO NOT ship): sha256/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
-     */
-    private const val CERT_PIN_LEAF = "sha256/GiEwp7irU6BX3DIMlfJi5jNJfMB64zvl7SlGott33pk="
-    private const val CERT_PIN_INTERMEDIATE = "sha256/brzvtCELCIZUo4sD/qPX0ccRtPsd3DY6RfmxpOU9oB4="
+    // No certificate pinning: crm.syncpedia.in uses 90-day Let's Encrypt certs whose key and
+    // issuing intermediate change on renewal, and a stale pin silently blocks every request.
 
     fun init(session: SessionManager) {
         this.session = session
@@ -62,12 +49,7 @@ object RetrofitClient {
                 .build()
             chain.proceed(req)
         }
-        val certificatePinner = CertificatePinner.Builder()
-            .add("crm.syncpedia.in", CERT_PIN_LEAF)
-            .add("crm.syncpedia.in", CERT_PIN_INTERMEDIATE)
-            .build()
         return OkHttpClient.Builder()
-            .certificatePinner(certificatePinner)
             .connectTimeout(30, TimeUnit.SECONDS)
             .readTimeout(60, TimeUnit.SECONDS)
             .writeTimeout(120, TimeUnit.SECONDS)

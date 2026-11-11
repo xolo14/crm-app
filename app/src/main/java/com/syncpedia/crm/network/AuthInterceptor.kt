@@ -13,19 +13,21 @@ class AuthInterceptor(private val session: SessionManager) : Interceptor {
     override fun intercept(chain: Interceptor.Chain): Response {
         val original = chain.request()
         val path = original.url.encodedPath
-        val query = original.url.query.orEmpty()
-        val publicActions = listOf(
-            "action=login",
-            "action=signup",
-            "action=forgot_password",
-            "action=google_login",
-            "action=verify_reset_otp",
-            "action=reset_password"
+        val action = original.url.queryParameter("action").orEmpty()
+        val publicActions = setOf(
+            "login",
+            "signup",
+            "forgot_password",
+            "google_login",
+            "google_config",
+            "verify_reset_otp",
+            "reset_password"
         )
-        val isPublicAuth = path.contains("auth.php") && (
-            publicActions.any { query.contains(it) } ||
-                (original.method.equals("POST", ignoreCase = true) &&
-                    session.getToken().isNullOrBlank())
+        // POST auth.php with no `action` query param is the plain email/password login
+        // (LoginActivity.login()), which also has no token yet — still public.
+        val isPublicAuth = path.endsWith("auth.php") && (
+            action in publicActions ||
+                (action.isEmpty() && original.method.equals("POST", ignoreCase = true))
             )
 
         val token = session.getToken()

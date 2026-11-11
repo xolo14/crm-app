@@ -7,6 +7,7 @@ import android.media.AudioFormat
 import android.media.AudioManager
 import android.media.AudioRecord
 import android.media.MediaRecorder
+import android.os.Environment
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
@@ -98,6 +99,20 @@ object CallRecorder {
     var lastStatusMessage: String = ""
         private set
 
+    fun getRecordingsDir(ctx: Context): File {
+        val ext = ctx.getExternalFilesDir(Environment.DIRECTORY_RECORDINGS)
+        val dir = if (ext != null) {
+            File(ext, "call_recordings").apply { mkdirs() }
+        } else {
+            File(ctx.filesDir, "call_recordings").apply { mkdirs() }
+        }
+        return dir
+    }
+
+    fun getDiscardedDir(ctx: Context): File {
+        return File(getRecordingsDir(ctx), "discarded").apply { mkdirs() }
+    }
+
     fun hasMicPermission(ctx: Context): Boolean =
         ContextCompat.checkSelfPermission(ctx, Manifest.permission.RECORD_AUDIO) ==
             PackageManager.PERMISSION_GRANTED
@@ -130,6 +145,11 @@ object CallRecorder {
         }
         if (!hasMicPermission(ctx)) {
             setStatus(ctx, "Microphone permission denied")
+            return false
+        }
+        if (!ConsentPrefs.hasAccepted(ctx)) {
+            setStatus(ctx, "Recording blocked — call consent not accepted")
+            Log.w(TAG, "start() blocked — consent not accepted")
             return false
         }
         if (!Mp3Encoder.isAvailable()) {
@@ -190,7 +210,7 @@ object CallRecorder {
             addAll(priority)
         }.distinct().filter { it !in skippedSources }
 
-        val dir = File(ctx.filesDir, "call_recordings").apply { mkdirs() }
+        val dir = getRecordingsDir(ctx)
         for (source in sourcesToTry) {
             Log.d(TAG, "Trying source: ${RecordingConfig.sourceName(source)}")
             if (RecordingConfig.isAirCapture(source)) {
@@ -342,7 +362,7 @@ object CallRecorder {
                 MediaRecorder.AudioSource.CAMCORDER !in skippedSources ||
                 MediaRecorder.AudioSource.VOICE_RECOGNITION !in skippedSources
             ) {
-                val dir = File(ctx.filesDir, "call_recordings").apply { mkdirs() }
+                val dir = getRecordingsDir(ctx)
                 val airSources = listOf(
                     MediaRecorder.AudioSource.VOICE_RECOGNITION,
                     MediaRecorder.AudioSource.CAMCORDER,
@@ -512,7 +532,7 @@ object CallRecorder {
         var keptPath = "(none)"
         if (file != null && file.exists()) {
             try {
-                val dir = File(ctx.filesDir, "call_recordings/discarded").apply { mkdirs() }
+                val dir = getDiscardedDir(ctx)
                 val dest = File(dir, "discarded_${System.currentTimeMillis()}_${file.name}")
                 if (file.renameTo(dest)) {
                     keptPath = dest.absolutePath
@@ -553,11 +573,15 @@ object CallRecorder {
      * Move mistakenly discarded substantial takes back into the main recordings list.
      */
     fun restoreDiscardedRecordings(ctx: Context): Int {
-        val discardedDir = File(ctx.filesDir, "call_recordings/discarded")
-        val mainDir = File(ctx.filesDir, "call_recordings").apply { mkdirs() }
-        if (!discardedDir.isDirectory) return 0
+        val discardedDirs = listOfNotNull(
+            getDiscardedDir(ctx),
+            File(ctx.filesDir, "call_recordings/discarded").takeIf { it.exists() }
+        ).distinctBy { it.absolutePath }
+        val mainDir = getRecordingsDir(ctx)
         var restored = 0
         val existing = load(ctx).toMutableList()
+        for (discardedDir in discardedDirs) {
+            if (!discardedDir.isDirectory) continue
         discardedDir.listFiles()
             ?.filter {
                 it.isFile &&
@@ -593,6 +617,7 @@ object CallRecorder {
                     Log.e(TAG, "restore discarded failed: ${e.message}")
                 }
             }
+        }
         if (restored > 0) {
             save(ctx, existing.take(80))
             setStatus(ctx, "Restored $restored recording(s) previously discarded")
@@ -898,27 +923,32 @@ object CallRecorder {
         restoreDiscardedRecordings(ctx)
         purgeSilentFiles(ctx)
         val fromPrefs = load(ctx).filter { File(it.path).exists() && hasAudibleAudio(File(it.path)) }
-        val dir = File(ctx.filesDir, "call_recordings")
+        val dirs = listOfNotNull(
+            getRecordingsDir(ctx),
+            File(ctx.filesDir, "call_recordings").takeIf { it.exists() }
+        ).distinctBy { it.absolutePath }
         val known = fromPrefs.map { it.path }.toSet()
-        val extras = dir.listFiles()
-            ?.filter {
-                it.isFile &&
-                    it.extension.lowercase() in setOf("mp3", "m4a", "wav") &&
-                    it.path !in known &&
-                    hasAudibleAudio(it)
-            }
-            ?.map {
-                RecordingItem(
-                    digits = "",
-                    path = it.absolutePath,
-                    endedAtMs = it.lastModified(),
-                    phone = "",
-                    contactName = "Recording",
-                    uploaded = false,
-                    startedAtMs = it.lastModified()
-                )
-            }
-            .orEmpty()
+        val extras = dirs.flatMap { dir ->
+            dir.listFiles()
+                ?.filter {
+                    it.isFile &&
+                        it.extension.lowercase() in setOf("mp3", "m4a", "wav") &&
+                        it.path !in known &&
+                        hasAudibleAudio(it)
+                }
+                ?.map {
+                    RecordingItem(
+                        digits = "",
+                        path = it.absolutePath,
+                        endedAtMs = it.lastModified(),
+                        phone = "",
+                        contactName = "Recording",
+                        uploaded = false,
+                        startedAtMs = it.lastModified()
+                    )
+                }
+                .orEmpty()
+        }
         return (fromPrefs + extras).sortedByDescending { it.endedAtMs }
     }
 
@@ -940,19 +970,25 @@ object CallRecorder {
             }
         }
         save(ctx, kept)
-        File(ctx.filesDir, "call_recordings").listFiles()?.forEach { f ->
-            if (f.isFile &&
-                f.extension.lowercase() in setOf("wav", "m4a", "mp3") &&
-                !hasAudibleAudio(f)
-            ) {
-                archiveDiscardedRecording(
-                    ctx,
-                    f,
-                    peak = 0,
-                    source = -1,
-                    threshold = RecordingConfig.silencePeakThreshold(ctx),
-                    callMs = 0L
-                )
+        val scanDirs = listOfNotNull(
+            getRecordingsDir(ctx),
+            File(ctx.filesDir, "call_recordings").takeIf { it.exists() }
+        ).distinctBy { it.absolutePath }
+        for (scanDir in scanDirs) {
+            scanDir.listFiles()?.forEach { f ->
+                if (f.isFile &&
+                    f.extension.lowercase() in setOf("wav", "m4a", "mp3") &&
+                    !hasAudibleAudio(f)
+                ) {
+                    archiveDiscardedRecording(
+                        ctx,
+                        f,
+                        peak = 0,
+                        source = -1,
+                        threshold = RecordingConfig.silencePeakThreshold(ctx),
+                        callMs = 0L
+                    )
+                }
             }
         }
     }

@@ -23,6 +23,7 @@ import com.syncpedia.crm.utils.DefaultDialerHelper
 import com.syncpedia.crm.utils.NotificationSync
 import com.syncpedia.crm.utils.SessionManager
 import com.syncpedia.crm.utils.SimRecordingPrefs
+import com.syncpedia.crm.workers.SyncPrefs
 import com.syncpedia.crm.workers.SyncWorker
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -146,9 +147,11 @@ class MoreFragment : Fragment() {
                 WorkInfo.State.FAILED -> "Sync failed — tap to retry"
                 WorkInfo.State.SUCCEEDED -> "Synced ✓ — ${getRelativeTime()}"
                 else -> when {
-                    summary.failed > 0 -> "Sync failed — ${summary.failed} need retry"
+                    summary.failed > 0 || SyncPrefs.needsManual(requireContext()) != null ->
+                        SyncPrefs.needsManual(requireContext())
+                            ?: "Auto sync failed — tap Sync when online"
                     summary.pending + summary.uploading > 0 ->
-                        "Pending ${summary.pending + summary.uploading} — tap Sync"
+                        "Waiting to sync — tap Sync if auto failed"
                     else -> "Last sync: ${getRelativeTime()}"
                 }
             }
@@ -169,20 +172,23 @@ class MoreFragment : Fragment() {
     }
 
     private fun observeSyncState() {
-        WorkManager.getInstance(requireContext())
-            .getWorkInfosForUniqueWorkLiveData("call_sync")
-            .observe(viewLifecycleOwner) { workInfos ->
-                val info = workInfos.firstOrNull()
-                val state = info?.state
-                if (state == WorkInfo.State.RUNNING) {
-                    binding.syncProgress.visibility = View.VISIBLE
-                    binding.ivSyncChevron.visibility = View.GONE
-                } else {
-                    binding.syncProgress.visibility = View.GONE
-                    binding.ivSyncChevron.visibility = View.VISIBLE
-                }
-                refreshSyncSummary(state)
-            }
+        val workManager = WorkManager.getInstance(requireContext())
+        workManager.getWorkInfosForUniqueWorkLiveData("call_sync")
+            .observe(viewLifecycleOwner) { refreshFromWork(it.firstOrNull()?.state) }
+        workManager.getWorkInfosForUniqueWorkLiveData("call_sync_auto")
+            .observe(viewLifecycleOwner) { refreshFromWork(it.firstOrNull()?.state) }
+    }
+
+    private fun refreshFromWork(state: WorkInfo.State?) {
+        if (_binding == null) return
+        if (state == WorkInfo.State.RUNNING) {
+            binding.syncProgress.visibility = View.VISIBLE
+            binding.ivSyncChevron.visibility = View.GONE
+        } else {
+            binding.syncProgress.visibility = View.GONE
+            binding.ivSyncChevron.visibility = View.VISIBLE
+        }
+        refreshSyncSummary(state)
     }
 
     private fun getRelativeTime(): String {
@@ -209,12 +215,17 @@ class MoreFragment : Fragment() {
     private fun syncNow() {
         binding.syncProgress.visibility = View.VISIBLE
         binding.ivSyncChevron.visibility = View.GONE
-        binding.tvSyncLabel.text = "Syncing…"
-        SyncWorker.schedule(requireContext())
-        Toast.makeText(requireContext(), "Sync started", Toast.LENGTH_SHORT).show()
+        binding.tvSyncLabel.text = "Uploading calls to the website…"
         viewLifecycleOwner.lifecycleScope.launch {
-            kotlinx.coroutines.delay(1500)
-            if (_binding != null) refreshSyncSummary()
+            val message = withContext(Dispatchers.IO) {
+                com.syncpedia.crm.utils.PendingCallSync.uploadAll(requireContext())
+            }
+            if (_binding == null) return@launch
+            binding.syncProgress.visibility = View.GONE
+            binding.ivSyncChevron.visibility = View.VISIBLE
+            binding.tvSyncLabel.text = message
+            Toast.makeText(requireContext(), message, Toast.LENGTH_LONG).show()
+            refreshSyncSummary()
         }
     }
 

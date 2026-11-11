@@ -47,7 +47,7 @@
     <color name="status_converted">#2E7D32</color>
     <color name="status_lost">#E53935</color>
     <color name="chart_not_picked">#FF6200</color>
-    <color name="ic_launcher_background">#142E26</color>
+    <color name="ic_launcher_background">#FFFFFF</color>
 
     <!-- Login screen (dark branded) — matches Syncpedia login look -->
     <color name="login_bg">#0D0D0D</color>

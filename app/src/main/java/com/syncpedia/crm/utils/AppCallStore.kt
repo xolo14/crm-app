@@ -33,6 +33,7 @@ object AppCallStore {
     private val gson = Gson()
     private val idSeq = AtomicLong(System.currentTimeMillis())
 
+    @Synchronized
     fun recordCompleted(
         ctx: Context,
         phone: String,
@@ -131,6 +132,24 @@ object AppCallStore {
         var page = 1
         while (page <= maxPages) {
             try {
+                val today = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US)
+                    .format(java.util.Date())
+                val website = RetrofitClient.api.getWebsiteCallLogs(
+                    dateFrom = "2020-01-01",
+                    dateTo = today,
+                    page = page,
+                    limit = pageSize
+                )
+                val websiteBatch = website.body()?.logs.orEmpty()
+                if (website.isSuccessful) {
+                    if (websiteBatch.isEmpty()) break
+                    all.addAll(websiteBatch)
+                    val total = website.body()?.total
+                    if (total != null && all.size >= total) break
+                    if (websiteBatch.size < pageSize) break
+                    page++
+                    continue
+                }
                 val resp = RetrofitClient.api.getCallLogs(page = page, limit = pageSize)
                 if (!resp.isSuccessful) break
                 val envelope = resp.body()
@@ -152,6 +171,33 @@ object AppCallStore {
     fun getUnsynced(ctx: Context, sessionSynced: (Long) -> Boolean): List<CallLogItem> =
         getAll(ctx).filter { !it.isSynced && !sessionSynced(it.id) }
 
+    /**
+     * Older builds posted to calls.php, which the website Call Log does not show.
+     * Mark local calls pending once so they are sent to call_logs.php.
+     */
+    @Synchronized
+    fun queueWebsiteResync(ctx: Context) {
+        val syncPrefs = ctx.applicationContext.getSharedPreferences("sp_sync", Context.MODE_PRIVATE)
+        if (syncPrefs.getBoolean("website_direct_upload", false)) return
+        syncPrefs.edit().putBoolean("website_direct_upload", true).apply()
+        val callPrefs = prefs(ctx)
+        save(callPrefs, load(callPrefs).map { it.copy(isSynced = false) })
+        SessionManager.getInstance(ctx).clearSyncedIds()
+        CoroutineScope(Dispatchers.IO).launch {
+            try {
+                com.syncpedia.crm.data.AppDatabase.get(ctx).callRecordDao().resetSyncedToPending()
+            } catch (e: Exception) {
+                Log.w(TAG, "website resync reset failed: ${e.message}")
+            }
+            try {
+                PendingCallSync.uploadAll(ctx)
+            } catch (e: Exception) {
+                Log.w(TAG, "direct upload failed: ${e.message}")
+            }
+        }
+    }
+
+    @Synchronized
     fun markLocalSynced(ctx: Context, callId: Long) {
         val prefs = prefs(ctx)
         val list = load(prefs).map {
@@ -231,8 +277,31 @@ object AppCallStore {
         return null
     }
 
-    private fun prefs(ctx: Context) =
-        ctx.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+    @Volatile
+    private var cachedPrefs: android.content.SharedPreferences? = null
+
+    /** Call history contains phone numbers/names, so it goes in EncryptedSharedPreferences, same as the session token. */
+    private fun prefs(ctx: Context): android.content.SharedPreferences {
+        cachedPrefs?.let { return it }
+        val appCtx = ctx.applicationContext
+        val created = try {
+            val masterKeyAlias = androidx.security.crypto.MasterKeys.getOrCreate(
+                androidx.security.crypto.MasterKeys.AES256_GCM_SPEC
+            )
+            androidx.security.crypto.EncryptedSharedPreferences.create(
+                PREFS,
+                masterKeyAlias,
+                appCtx,
+                androidx.security.crypto.EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
+                androidx.security.crypto.EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
+            )
+        } catch (e: Exception) {
+            Log.e(TAG, "Encrypted call store unavailable, using private prefs", e)
+            appCtx.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        }
+        cachedPrefs = created
+        return created
+    }
 
     private fun load(prefs: android.content.SharedPreferences): List<CallLogItem> {
         val raw = prefs.getString(KEY_CALLS, null) ?: return emptyList()

@@ -6,6 +6,8 @@
     <string name="email">Email</string>
     <string name="password">Password</string>
     <string name="login">Login</string>
+    <string name="sign_in_with_google">Sign in with Google</string>
+    <string name="or_divider">or</string>
     <string name="version">v1.0</string>
     <string name="perm_recording_title">Microphone for call recording</string>
     <string name="perm_recording_body">Allow microphone so calls made from the app can be recorded and synced to CRM.</string>

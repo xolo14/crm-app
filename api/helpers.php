@@ -24,11 +24,19 @@ function cors(): void
         header('Vary: Origin');
     }
 
-    header('Access-Control-Allow-Methods: GET, POST, OPTIONS');
+    header('Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS');
     header('Access-Control-Allow-Headers: Content-Type, Authorization');
     header('Access-Control-Max-Age: 86400');
     header('Content-Type: application/json; charset=UTF-8');
+
+    // Production hardening — this API only ever returns JSON, so these are cheap wins:
     header('X-Content-Type-Options: nosniff');
+    header('X-Frame-Options: DENY');
+    header("Content-Security-Policy: default-src 'none'; frame-ancestors 'none'");
+    header('Referrer-Policy: no-referrer');
+    if (!empty($_SERVER['HTTPS']) || (string) ($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '') === 'https') {
+        header('Strict-Transport-Security: max-age=31536000; includeSubDomains');
+    }
     header('Cache-Control: no-store');
 
     if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'OPTIONS') {

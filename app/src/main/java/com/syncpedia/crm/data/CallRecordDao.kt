@@ -40,6 +40,11 @@ interface CallRecordDao {
     )
 
     @Query(
+        "UPDATE call_records SET syncStatus = 'PENDING', updatedAtMs = :now WHERE syncStatus = 'SYNCED'"
+    )
+    suspend fun resetSyncedToPending(now: Long = System.currentTimeMillis())
+
+    @Query(
         "UPDATE call_records SET recordingFilePath = :path, recordingState = :state, updatedAtMs = :now WHERE deviceCallId = :deviceCallId"
     )
     suspend fun updateRecording(

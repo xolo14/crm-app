@@ -1,17 +1,24 @@
 package com.syncpedia.crm.ui
 
+import android.content.ContentValues
+import android.content.Intent
 import android.media.AudioAttributes
 import android.media.AudioManager
 import android.media.MediaPlayer
+import android.media.MediaScannerConnection
+import android.os.Build
 import android.os.Bundle
+import android.os.Environment
 import android.os.Handler
 import android.os.Looper
+import android.provider.MediaStore
 import android.util.Log
 import android.view.View
 import android.widget.SeekBar
 import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.content.FileProvider
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.syncpedia.crm.databinding.ActivityCallRecordingsBinding
@@ -53,7 +60,7 @@ class CallRecordingsActivity : AppCompatActivity() {
         setContentView(binding.root)
         binding.btnRecBack.setOnClickListener { finish() }
         binding.tvRecHint.text =
-            "Source is shown per file. Discarded takes are kept under discarded/ for diagnosis."
+            "Tap to play · Long-press to Share, Save to Downloads, or Delete"
         CallRecorder.purgeSilentFiles(this)
         binding.rvRecordings.layoutManager = LinearLayoutManager(this)
         reload()
@@ -187,7 +194,7 @@ class CallRecordingsActivity : AppCompatActivity() {
             b.root.setOnClickListener { togglePlay(item) }
             b.tvRecIcon.setOnClickListener { togglePlay(item) }
             b.root.setOnLongClickListener {
-                confirmDelete(item)
+                showItemOptions(item)
                 true
             }
         }
@@ -321,6 +328,96 @@ class CallRecordingsActivity : AppCompatActivity() {
         raf.write(v shr 8 and 0xff)
         raf.write(v shr 16 and 0xff)
         raf.write(v shr 24 and 0xff)
+    }
+
+    private fun showItemOptions(item: CallRecorder.RecordingItem) {
+        val options = arrayOf("Share recording", "Save to Downloads", "Delete")
+        AlertDialog.Builder(this)
+            .setTitle(item.contactName.ifBlank { item.phone.ifBlank { "Recording" } })
+            .setItems(options) { _, which ->
+                when (which) {
+                    0 -> shareRecording(item)
+                    1 -> saveToDownloads(item)
+                    2 -> confirmDelete(item)
+                }
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    private fun shareRecording(item: CallRecorder.RecordingItem) {
+        val file = File(item.path)
+        if (!file.exists()) {
+            Toast.makeText(this, "Recording file not found", Toast.LENGTH_SHORT).show()
+            return
+        }
+        try {
+            val uri = FileProvider.getUriForFile(
+                this,
+                "${applicationContext.packageName}.fileprovider",
+                file
+            )
+            val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                type = "audio/*"
+                putExtra(Intent.EXTRA_STREAM, uri)
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
+            startActivity(Intent.createChooser(shareIntent, "Share Recording"))
+        } catch (e: Exception) {
+            Log.e(TAG, "Share failed: ${e.message}", e)
+            Toast.makeText(this, "Failed to share: ${e.message}", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    private fun saveToDownloads(item: CallRecorder.RecordingItem) {
+        val file = File(item.path)
+        if (!file.exists()) {
+            Toast.makeText(this, "Recording file not found", Toast.LENGTH_SHORT).show()
+            return
+        }
+        try {
+            val fileName = file.name
+            val mimeType = if (fileName.endsWith(".mp3", ignoreCase = true)) "audio/mpeg" else "audio/*"
+
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                val values = ContentValues().apply {
+                    put(MediaStore.MediaColumns.DISPLAY_NAME, fileName)
+                    put(MediaStore.MediaColumns.MIME_TYPE, mimeType)
+                    put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS)
+                    put(MediaStore.MediaColumns.IS_PENDING, 1)
+                }
+
+                val resolver = contentResolver
+                val uri = resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
+                if (uri != null) {
+                    resolver.openOutputStream(uri)?.use { outStream ->
+                        file.inputStream().use { inStream ->
+                            inStream.copyTo(outStream)
+                        }
+                    }
+                    values.clear()
+                    values.put(MediaStore.MediaColumns.IS_PENDING, 0)
+                    resolver.update(uri, values, null, null)
+                    Toast.makeText(this, "Saved to Downloads: $fileName", Toast.LENGTH_LONG).show()
+                } else {
+                    Toast.makeText(this, "Failed to create entry in Downloads", Toast.LENGTH_SHORT).show()
+                }
+            } else {
+                val downloadsDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
+                if (downloadsDir != null) {
+                    downloadsDir.mkdirs()
+                    val dest = File(downloadsDir, fileName)
+                    file.copyTo(dest, overwrite = true)
+                    MediaScannerConnection.scanFile(this, arrayOf(dest.absolutePath), arrayOf(mimeType), null)
+                    Toast.makeText(this, "Saved to Downloads: ${dest.name}", Toast.LENGTH_LONG).show()
+                } else {
+                    Toast.makeText(this, "Downloads folder unavailable", Toast.LENGTH_SHORT).show()
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Save to Downloads failed: ${e.message}", e)
+            Toast.makeText(this, "Could not save to Downloads: ${e.message}", Toast.LENGTH_SHORT).show()
+        }
     }
 
     private fun confirmDelete(item: CallRecorder.RecordingItem) {

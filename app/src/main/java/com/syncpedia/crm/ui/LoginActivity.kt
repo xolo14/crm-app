@@ -8,10 +8,19 @@ import android.view.View
 import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
+import androidx.credentials.CredentialManager
+import androidx.credentials.CustomCredential
+import androidx.credentials.GetCredentialRequest
+import androidx.credentials.exceptions.GetCredentialCancellationException
+import androidx.credentials.exceptions.GetCredentialException
+import androidx.credentials.exceptions.NoCredentialException
 import androidx.lifecycle.lifecycleScope
+import com.google.android.libraries.identity.googleid.GetSignInWithGoogleOption
+import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential
 import com.google.gson.Gson
 import com.google.gson.JsonParser
 import com.syncpedia.crm.databinding.ActivityLoginBinding
+import com.syncpedia.crm.models.GoogleLoginRequest
 import com.syncpedia.crm.models.LoginRequest
 import com.syncpedia.crm.models.LoginResponse
 import com.syncpedia.crm.models.OrganizationInfo
@@ -22,16 +31,15 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaType
-import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
-import java.util.concurrent.TimeUnit
 
 class LoginActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivityLoginBinding
     private lateinit var session: SessionManager
     private val gson = Gson()
+    private var googleClientId: String = ""
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -45,6 +53,98 @@ class LoginActivity : AppCompatActivity() {
         }
 
         binding.btnLogin.setOnClickListener { attemptLogin() }
+        binding.btnGoogle.setOnClickListener { startGoogleSignIn() }
+        loadGoogleSignIn()
+    }
+
+    private fun loadGoogleSignIn() {
+        lifecycleScope.launch {
+            try {
+                val resp = RetrofitClient.api.googleConfig()
+                val id = resp.body()?.clientId?.trim().orEmpty()
+                if (resp.isSuccessful && id.isNotEmpty()) {
+                    googleClientId = id
+                    binding.googleSection.visibility = View.VISIBLE
+                }
+            } catch (e: Exception) {
+                Log.w("LoginActivity", "google config unavailable", e)
+            }
+        }
+    }
+
+    private fun startGoogleSignIn() {
+        val clientId = googleClientId
+        if (clientId.isBlank()) {
+            showLoginError("Google sign-in is not configured")
+            return
+        }
+        setLoading(true)
+        lifecycleScope.launch {
+            try {
+                val option = GetSignInWithGoogleOption.Builder(clientId).build()
+                val request = GetCredentialRequest.Builder()
+                    .addCredentialOption(option)
+                    .build()
+                val result = CredentialManager.create(this@LoginActivity)
+                    .getCredential(this@LoginActivity, request)
+                val cred = result.credential
+                if (cred !is CustomCredential ||
+                    cred.type != GoogleIdTokenCredential.TYPE_GOOGLE_ID_TOKEN_CREDENTIAL
+                ) {
+                    showLoginError("Google did not return a sign-in credential")
+                    return@launch
+                }
+                val idToken = GoogleIdTokenCredential.createFrom(cred.data).idToken
+                if (idToken.isBlank()) {
+                    showLoginError("Google did not return a sign-in token")
+                    return@launch
+                }
+                completeGoogleLogin(idToken)
+            } catch (_: GetCredentialCancellationException) {
+                // Account picker dismissed.
+            } catch (_: NoCredentialException) {
+                showLoginError("No Google account is available on this phone. Add one in Settings, or sign in with email.")
+            } catch (e: GetCredentialException) {
+                Log.e("LoginActivity", "google credential failed", e)
+                showLoginError(googleSignInError(e))
+            } catch (e: Exception) {
+                Log.e("LoginActivity", "google sign-in failed", e)
+                showLoginError(e.message ?: "Google sign-in failed")
+            } finally {
+                setLoading(false)
+            }
+        }
+    }
+
+    private suspend fun completeGoogleLogin(idToken: String) {
+        val resp = RetrofitClient.api.googleLogin(GoogleLoginRequest(idToken))
+        val body = resp.body()
+        if (resp.isSuccessful && body != null && !body.token.isNullOrBlank() && body.user != null) {
+            saveSessionAndEnter(body)
+            return
+        }
+        val errText = resp.errorBody()?.string().orEmpty()
+        val parsedErr = try {
+            gson.fromJson(errText.ifBlank { "{}" }, LoginResponse::class.java)
+        } catch (_: Exception) {
+            null
+        }
+        val serverMsg = parsedErr?.error
+            ?: parsedErr?.message
+            ?: body?.error
+            ?: body?.message
+            ?: sanitizeError(errText).takeIf { it.isNotBlank() }
+            ?: "Google sign-in failed (HTTP ${resp.code()})"
+        Log.e("LoginActivity", "google login failed code=${resp.code()}")
+        showLoginError(serverMsg)
+    }
+
+    private fun googleSignInError(e: GetCredentialException): String {
+        val raw = (e.message ?: "").lowercase()
+        if (raw.contains("28444") || raw.contains("developer console") || raw.contains(": 10") || raw.contains("10:")) {
+            return "Google sign-in is not set up for this app build yet. In Google Cloud, add an Android OAuth client for com.syncpedia.crm using this app’s SHA-1."
+        }
+        return sanitizeError(e.message ?: "Google sign-in failed").ifBlank { "Google sign-in failed" }
     }
 
     private fun attemptLogin() {
@@ -164,16 +264,17 @@ class LoginActivity : AppCompatActivity() {
         }
     }
 
+    /**
+     * Fallback for when Retrofit's Gson conversion throws on an otherwise-OK response.
+     * MUST reuse RetrofitClient's pinned OkHttpClient — building a fresh client here would
+     * send the password over a connection with no certificate pinning.
+     */
     private fun rawLogin(email: String, password: String): String {
-        val client = OkHttpClient.Builder()
-            .connectTimeout(30, TimeUnit.SECONDS)
-            .readTimeout(60, TimeUnit.SECONDS)
-            .build()
+        val client = RetrofitClient.okHttpClient
         val json = gson.toJson(LoginRequest(email, password))
         val req = Request.Builder()
             .url("https://crm.syncpedia.in/api/auth.php")
             .header("Accept", "application/json")
-            .header("User-Agent", "SyncpediaCRM-Android/1.0")
             .post(json.toRequestBody("application/json; charset=utf-8".toMediaType()))
             .build()
         client.newCall(req).execute().use { response ->
@@ -202,6 +303,7 @@ class LoginActivity : AppCompatActivity() {
     private fun setLoading(loading: Boolean) {
         binding.progressBar.visibility = if (loading) View.VISIBLE else View.GONE
         binding.btnLogin.isEnabled = !loading
+        binding.btnGoogle.isEnabled = !loading
     }
 
     private fun goMain() {

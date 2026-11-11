@@ -7,6 +7,8 @@ import com.syncpedia.crm.models.CreateActivityRequest
 import com.syncpedia.crm.models.CreateLeadRequest
 import com.syncpedia.crm.models.CreateLeadResponse
 import com.syncpedia.crm.models.CrmNotification
+import com.syncpedia.crm.models.GoogleConfigResponse
+import com.syncpedia.crm.models.GoogleLoginRequest
 import com.syncpedia.crm.models.Lead
 import com.syncpedia.crm.models.LocationRequest
 import com.syncpedia.crm.models.LoginRequest
@@ -18,6 +20,7 @@ import com.syncpedia.crm.models.UpdateLeadRequest
 import com.syncpedia.crm.models.UploadResponse
 import okhttp3.MultipartBody
 import okhttp3.RequestBody
+import okhttp3.ResponseBody
 import retrofit2.Response
 import retrofit2.http.Body
 import retrofit2.http.DELETE
@@ -35,6 +38,16 @@ interface ApiService {
     @POST("auth.php")
     suspend fun login(
         @Body body: LoginRequest
+    ): Response<LoginResponse>
+
+    @GET("auth.php")
+    suspend fun googleConfig(
+        @Query("action") action: String = "google_config"
+    ): Response<GoogleConfigResponse>
+
+    @POST("auth.php")
+    suspend fun googleLogin(
+        @Body body: GoogleLoginRequest
     ): Response<LoginResponse>
 
     @GET("leads.php")
@@ -64,6 +77,33 @@ interface ApiService {
     @POST("activities.php")
     suspend fun createActivity(@Body body: CreateActivityRequest): Response<SuccessResponse>
 
+    /**
+     * Website Call Log page reads and writes `/api/call_logs.php`, not `calls.php`.
+     * Field names match the site form: call_type, call_status, duration_seconds, call_date, call_time.
+     */
+    @POST("call_logs.php")
+    suspend fun addCallLog(
+        @Query("action") action: String = "add_log",
+        @Body body: com.syncpedia.crm.models.CallLogUploadRequest
+    ): Response<ResponseBody>
+
+    @Multipart
+    @POST("call_logs.php")
+    suspend fun addCallLogWithRecording(
+        @Query("action") action: String = "add_log",
+        @Part("call_type") callType: RequestBody,
+        @Part("call_status") callStatus: RequestBody,
+        @Part("duration_seconds") durationSeconds: RequestBody,
+        @Part("call_date") callDate: RequestBody,
+        @Part("call_time") callTime: RequestBody,
+        @Part("client_phone") clientPhone: RequestBody,
+        @Part("client_name") clientName: RequestBody,
+        @Part("device_call_id") deviceCallId: RequestBody,
+        @Part("latitude") latitude: RequestBody?,
+        @Part("longitude") longitude: RequestBody?,
+        @Part recording: MultipartBody.Part?
+    ): Response<ResponseBody>
+
     @Multipart
     @POST("calls.php")
     suspend fun uploadCall(
@@ -78,6 +118,16 @@ interface ApiService {
         @Part("leadId") leadId: RequestBody?,
         @Part recording: MultipartBody.Part?
     ): Response<UploadResponse>
+
+    @GET("call_logs.php")
+    suspend fun getWebsiteCallLogs(
+        @Query("action") action: String = "get_logs",
+        @Query("period") period: String = "custom",
+        @Query("date_from") dateFrom: String,
+        @Query("date_to") dateTo: String,
+        @Query("page") page: Int = 1,
+        @Query("limit") limit: Int = 100
+    ): Response<com.syncpedia.crm.models.CallLogsPageResponse>
 
     @GET("calls.php")
     suspend fun getCallLogs(

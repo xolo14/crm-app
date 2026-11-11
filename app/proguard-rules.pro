@@ -13,6 +13,10 @@
 # Gson
 -keep class com.google.gson.** { *; }
 
+# Google Sign-In credential
+-keep class com.google.android.libraries.identity.googleid.** { *; }
+-dontwarn com.google.android.libraries.identity.googleid.**
+
 # WorkManager
 -keep class androidx.work.** { *; }
 -keep class * extends androidx.work.Worker

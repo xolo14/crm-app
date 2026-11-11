@@ -5,6 +5,11 @@
 
 declare(strict_types=1);
 
+// Never leak PHP errors/warnings into the response body — output buffering below
+// also discards anything printed before api_json_die()/respond(), but belt-and-suspenders.
+ini_set('display_errors', '0');
+error_reporting(E_ALL);
+
 if (!function_exists('api_json_die')) {
     function api_json_die(array $data, int $status = 500): void
     {

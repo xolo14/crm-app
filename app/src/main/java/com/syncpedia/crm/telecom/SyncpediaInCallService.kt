@@ -13,6 +13,7 @@ import android.os.Looper
 import android.os.SystemClock
 import android.provider.CallLog
 import android.telecom.Call
+import android.telecom.DisconnectCause
 import android.telecom.InCallService
 import android.telecom.VideoProfile
 import android.util.Log
@@ -23,12 +24,9 @@ import com.syncpedia.crm.ui.InCallActivity
 import com.syncpedia.crm.utils.AppCallStore
 import com.syncpedia.crm.utils.AppCallTracker
 import com.syncpedia.crm.utils.AppDialer
-import com.syncpedia.crm.utils.CallLogReader
 import com.syncpedia.crm.utils.CallRecorder
 import com.syncpedia.crm.utils.ContactReader
 import com.syncpedia.crm.utils.DefaultDialerHelper
-import com.syncpedia.crm.utils.LocationHelper
-import com.syncpedia.crm.utils.SessionManager
 import com.syncpedia.crm.utils.SimRecordingPrefs
 import com.syncpedia.crm.workers.SyncWorker
 import java.io.File
@@ -82,11 +80,16 @@ class SyncpediaInCallService : InCallService() {
 
         @Volatile private var instance: SyncpediaInCallService? = null
 
+        @Volatile private var userRejected = false
+
         fun hangUp() {
             val c = currentCall ?: return
             try {
                 when (c.telecomState()) {
-                    Call.STATE_RINGING -> c.reject(false, null)
+                    Call.STATE_RINGING -> {
+                        userRejected = true
+                        c.reject(false, null)
+                    }
                     else -> c.disconnect()
                 }
             } catch (e: Exception) {
@@ -188,6 +191,7 @@ class SyncpediaInCallService : InCallService() {
     private var outputFile: File? = null
     private var activeSource = -1
     private var pendingRecordingFile: File? = null
+    private var answeredMs = 0L
 
     override fun onCreate() {
         super.onCreate()
@@ -222,13 +226,17 @@ class SyncpediaInCallService : InCallService() {
                 Call.STATE_ACTIVE -> {
                     if (callStartMs == 0L) callStartMs = System.currentTimeMillis()
                     IncomingCallNotifier.cancel(this@SyncpediaInCallService)
-                    recordingDesired = SimRecordingPrefs.isSimAllowed(
-                        this@SyncpediaInCallService,
-                        currentSimKey
-                    )
+                    // STATE_ACTIVE also fires after un-hold; only the first one is the answer.
+                    if (answeredMs == 0L) {
+                        answeredMs = System.currentTimeMillis()
+                        recordingDesired = SimRecordingPrefs.isSimAllowed(
+                            this@SyncpediaInCallService,
+                            currentSimKey
+                        )
+                    }
                     if (recordingDesired && recorder == null) {
                         scheduleRecordingStarts()
-                    } else if (!recordingDesired) {
+                    } else if (!recordingDesired && recorder == null) {
                         cancelPendingRecordingStarts()
                         CallRecorder.setStatusPublic(
                             this@SyncpediaInCallService,
@@ -274,6 +282,8 @@ class SyncpediaInCallService : InCallService() {
         currentSimKey = AppDialer.simKeyForHandle(this, call.details?.accountHandle)
         call.registerCallback(callback)
         callStartMs = System.currentTimeMillis()
+        answeredMs = 0L
+        userRejected = false
         pendingRecordingFile = null
         recordingDesired = false
         recordingSegmentStartElapsed = 0L
@@ -291,6 +301,7 @@ class SyncpediaInCallService : InCallService() {
         }
 
         if (call.telecomState() == Call.STATE_ACTIVE) {
+            answeredMs = System.currentTimeMillis()
             recordingDesired = SimRecordingPrefs.isSimAllowed(this, currentSimKey)
             if (recordingDesired) scheduleRecordingStarts()
         }
@@ -358,6 +369,15 @@ class SyncpediaInCallService : InCallService() {
         val state = currentCall?.telecomState()
         if (state != Call.STATE_ACTIVE && state != Call.STATE_HOLDING) return
 
+        // Hard gate: never record without consent, regardless of how this call path was reached
+        // (SIM prefs, UI toggle, scheduled retry). Must be enforced here, not just in navigation.
+        if (!com.syncpedia.crm.utils.ConsentPrefs.hasAccepted(this)) {
+            Log.w(TAG, "Recording blocked — consent not accepted")
+            recordingDesired = false
+            InCallActivity.refreshRecordingUi()
+            return
+        }
+
         if (!DefaultDialerHelper.isDefaultDialer(this)) {
             CallRecorder.setStatusPublic(
                 this,
@@ -383,6 +403,9 @@ class SyncpediaInCallService : InCallService() {
             SOURCES
         }
 
+        // Android 11+ only delivers mic audio in the background if the microphone foreground
+        // service is already running, so start it before the recorder.
+        showRecordingNotification()
         for (src in order) {
             if (trySource(src)) {
                 activeSource = src
@@ -390,7 +413,6 @@ class SyncpediaInCallService : InCallService() {
                 prefs.edit().putInt(KEY_SRC, src).apply()
                 isCapturing = true
                 recordingSegmentStartElapsed = SystemClock.elapsedRealtime()
-                showRecordingNotification()
                 CallRecorder.setStatusPublic(this, "Recording · $activeSourceName")
                 InCallActivity.onRecordingStarted(activeSourceName)
                 InCallActivity.refreshRecordingUi()
@@ -398,6 +420,7 @@ class SyncpediaInCallService : InCallService() {
                 return
             }
         }
+        hideRecordingNotification()
         Log.e(TAG, "All sources failed — no recording on this device")
         CallRecorder.setStatusPublic(this, "Could not find an audible recording source")
         recordingDesired = false
@@ -406,7 +429,7 @@ class SyncpediaInCallService : InCallService() {
 
     private fun trySource(src: Int): Boolean {
         return try {
-            val dir = File(filesDir, "call_recordings").apply { mkdirs() }
+            val dir = CallRecorder.getRecordingsDir(this)
             val f = File(dir, "rec_${System.currentTimeMillis()}.m4a")
             val mr = if (Build.VERSION.SDK_INT >= 31) {
                 MediaRecorder(this)
@@ -520,7 +543,6 @@ class SyncpediaInCallService : InCallService() {
             } else {
                 null
             }
-            AppCallTracker.consumeRecentPlacement(this, phone)
             val startMs = when {
                 pending != null && pending.placedAtMs > 0 ->
                     minOf(pending.placedAtMs, started)
@@ -528,51 +550,41 @@ class SyncpediaInCallService : InCallService() {
                 else -> ended
             }
             val contact = displayName.ifBlank { pending?.displayName.orEmpty() }
+            val wasAnswered = answeredMs > 0L
+            val callTypeInt = when {
+                !incoming -> CallLog.Calls.OUTGOING_TYPE
+                wasAnswered -> CallLog.Calls.INCOMING_TYPE
+                userRejected || call.details?.disconnectCause?.code == DisconnectCause.REJECTED ->
+                    CallLog.Calls.REJECTED_TYPE
+                else -> CallLog.Calls.MISSED_TYPE
+            }
+            // Talk time starts when the call was answered; unanswered calls have zero duration.
+            val recStart = if (wasAnswered) answeredMs else startMs
+            val recEnd = if (wasAnswered) ended else startMs
             val item = AppCallStore.recordCompleted(
                 ctx = applicationContext,
                 phone = phone.ifBlank { pending?.digits.orEmpty() },
                 contactName = contact,
-                startedAtMs = startMs,
-                endedAtMs = ended,
-                callType = if (incoming) CallLog.Calls.INCOMING_TYPE else CallLog.Calls.OUTGOING_TYPE
+                startedAtMs = recStart,
+                endedAtMs = recEnd,
+                callType = callTypeInt
             )
             deviceCallId = item?.id ?: 0L
             if (item != null) {
                 val recPath = recordingFile?.absolutePath
                 AppCallStore.mirrorToRoom(applicationContext, item, ended, recPath)
+                // One upload, 1 minute after hangup. Manual Sync Now still runs immediately.
                 SyncWorker.scheduleAfterCallEnded(applicationContext)
+                com.syncpedia.crm.receivers.CallSyncAlarmReceiver.scheduleInOneMinute(applicationContext)
             }
         } else if (!incoming) {
             AppCallTracker.consumeRecentPlacement(this, phone)
         }
 
-        if (SessionManager.getInstance(this).isLoggedIn() && phone.isNotBlank()) {
-            val type = when {
-                durationSec <= 2 && incoming -> "missed"
-                incoming -> CallLogReader.typeLabel(CallLog.Calls.INCOMING_TYPE)
-                else -> CallLogReader.typeLabel(CallLog.Calls.OUTGOING_TYPE)
-            }
-            val name = displayName.ifBlank { "Unknown" }
-            val path = recordingFile?.absolutePath
-            val callId = deviceCallId
-            LocationHelper(this).get(
-                onSuccess = { lat, lng ->
-                    SyncWorker.scheduleUpload(
-                        this, phone, name, type, durationSec, path, lat, lng, callId,
-                        delaySeconds = SyncWorker.AUTO_SYNC_DELAY_SEC
-                    )
-                },
-                onFail = {
-                    SyncWorker.scheduleUpload(
-                        this, phone, name, type, durationSec, path, null, null, callId,
-                        delaySeconds = SyncWorker.AUTO_SYNC_DELAY_SEC
-                    )
-                }
-            )
-        }
-
         if (currentCall === call) currentCall = null
         callStartMs = 0L
+        answeredMs = 0L
+        userRejected = false
         isIncoming = false
         currentSimKey = "default"
         isMuted = false

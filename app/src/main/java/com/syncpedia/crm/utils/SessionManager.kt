@@ -113,8 +113,17 @@ class SessionManager private constructor(ctx: Context) {
     fun markSynced(callId: Long) {
         val set = getSyncedIds().toMutableSet()
         set.add(callId.toString())
-        val trimmed = if (set.size > 500) set.drop(set.size - 500).toSet() else set
+        // Call IDs are timestamp-based, so keep the 500 newest rather than an arbitrary subset.
+        val trimmed = if (set.size > 500) {
+            set.sortedBy { it.toLongOrNull() ?: 0L }.takeLast(500).toSet()
+        } else {
+            set
+        }
         prefs.edit().putStringSet(KEY_SYNCED, trimmed).apply()
+    }
+
+    fun clearSyncedIds() {
+        prefs.edit().remove(KEY_SYNCED).apply()
     }
 
     fun isSynced(callId: Long) = getSyncedIds().contains(callId.toString())
