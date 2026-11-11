@@ -143,6 +143,9 @@ class SessionManager private constructor(ctx: Context) {
         private const val KEY_SYNCED = "synced_ids"
         private const val TOKEN_MAX_AGE_MS = 7L * 24L * 60L * 60L * 1000L
 
+        /** Fires when the server rejects the token; MainActivity sends the user to login. */
+        val sessionExpired = androidx.lifecycle.MutableLiveData<Long>()
+
         @Volatile
         private var INSTANCE: SessionManager? = null
 

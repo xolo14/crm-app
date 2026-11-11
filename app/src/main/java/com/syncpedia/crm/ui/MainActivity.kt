@@ -42,6 +42,12 @@ class MainActivity : AppCompatActivity() {
 
             session = SessionManager.getInstance(this)
             if (!ensureLoggedIn()) return
+            SessionManager.sessionExpired.observe(this) {
+                if (!session.isLoggedIn()) {
+                    Toast.makeText(this, "Session expired — please log in again", Toast.LENGTH_LONG).show()
+                    ensureLoggedIn()
+                }
+            }
             if (!com.syncpedia.crm.utils.ConsentPrefs.hasAccepted(this)) {
                 startActivity(
                     Intent(this, CallConsentActivity::class.java).apply {

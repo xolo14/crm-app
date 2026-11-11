@@ -34,8 +34,10 @@ class SessionExpiryInterceptor(private val session: SessionManager) : Intercepto
                 body.contains("jwt") ||
                 body.isBlank()
 
-            if (!orgScoped && tokenRejected) {
+            // Any non-org 401 means the token is no longer accepted.
+            if (!orgScoped && (tokenRejected || response.code == 401)) {
                 session.clearSession()
+                SessionManager.sessionExpired.postValue(System.currentTimeMillis())
             }
         }
         return response
