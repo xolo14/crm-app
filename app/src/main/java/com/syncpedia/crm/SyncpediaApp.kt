@@ -14,6 +14,8 @@ class SyncpediaApp : Application() {
         // App palette is light Syncpedia; login screen keeps its own dark branding.
         AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_NO)
 
+        com.syncpedia.crm.utils.EdgeToEdge.install(this)
+
         val session = SessionManager.getInstance(this)
         RetrofitClient.init(session)
         NotificationSync.ensureChannel(this)

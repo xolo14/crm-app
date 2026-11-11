@@ -7,8 +7,6 @@
         <item name="colorSecondary">@color/syncpedia_orange</item>
         <item name="colorAccent">@color/syncpedia_orange</item>
         <item name="android:windowBackground">@color/bg_page</item>
-        <item name="android:statusBarColor">@color/bg_toolbar</item>
-        <item name="android:navigationBarColor">@color/nav_bg</item>
         <item name="android:windowLightNavigationBar">true</item>
         <item name="android:textColorPrimary">@color/text_primary</item>
         <item name="android:textColorSecondary">@color/text_secondary</item>
