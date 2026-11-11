@@ -49,6 +49,8 @@ class LeadsViewModel(app: Application) : AndroidViewModel(app) {
     private val _activities = MutableLiveData<List<ActivityItem>>(emptyList())
     val activities: LiveData<List<ActivityItem>> = _activities
 
+    private var fetchJob: kotlinx.coroutines.Job? = null
+
     /** Full latest fetch (up to MAX_LEADS); UI list is timeline-filtered. */
     private var cachedLeads: List<Lead> = emptyList()
     private var filterFromMs: Long = 0L
@@ -68,8 +70,17 @@ class LeadsViewModel(app: Application) : AndroidViewModel(app) {
         search: String? = null,
         status: String? = null
     ) {
-        viewModelScope.launch {
+        // A newer search must win; a slower older request would otherwise overwrite it.
+        fetchJob?.cancel()
+        fetchJob = viewModelScope.launch {
             _isLoading.value = true
+            val plainFetch = search.isNullOrBlank() && (status.isNullOrBlank() || status == "all")
+            val cacheKey = "${session.getUser()?.id}|${session.getOrgId()}"
+            if (plainFetch && cachedLeads.isEmpty() && lastLeadsKey == cacheKey && lastLeads.isNotEmpty()) {
+                // Show the previous list instantly while the network refresh runs.
+                cachedLeads = lastLeads
+                publishFiltered()
+            }
             _error.value = null
             refreshAccessLabel()
 
@@ -123,6 +134,11 @@ class LeadsViewModel(app: Application) : AndroidViewModel(app) {
                     reportedTotal = envelope?.total ?: (offset + page.size)
                     all.addAll(page)
                     pages++
+                    if (pages == 1 && page.size >= limit) {
+                        // Paint the first page right away; later pages extend it.
+                        cachedLeads = all.toList()
+                        publishFiltered()
+                    }
 
                     if (all.size >= MAX_LEADS) {
                         if (all.size > MAX_LEADS) {
@@ -142,6 +158,12 @@ class LeadsViewModel(app: Application) : AndroidViewModel(app) {
                 cachedLeads = all
                 publishFiltered()
                 _error.value = null
+                if (plainFetch) {
+                    lastLeads = all
+                    lastLeadsKey = cacheKey
+                }
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
             } catch (e: Exception) {
                 _error.value = e.message ?: "Network error"
             } finally {
@@ -158,6 +180,10 @@ class LeadsViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     companion object {
+        /** Last full lead list, kept for the process so reopening the tab is instant. */
+        @Volatile private var lastLeads: List<Lead> = emptyList()
+        @Volatile private var lastLeadsKey: String? = null
+
         /** Newest-first from API; hard cap so the app stays responsive. */
         private const val MAX_LEADS = 10_000
         private const val PAGE_SIZE = 500

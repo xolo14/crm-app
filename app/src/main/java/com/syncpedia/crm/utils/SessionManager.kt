@@ -76,6 +76,7 @@ class SessionManager private constructor(ctx: Context) {
     }
 
     fun clearSession() {
+        AppCallStore.invalidateServerCache()
         val synced = getSyncedIds()
         prefs.edit().clear().apply()
         // Keep sync dedupe across re-login on same device

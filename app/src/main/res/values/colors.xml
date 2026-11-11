@@ -5,18 +5,18 @@
     <color name="bg_page">#F7F9F8</color>
     <color name="bg_card">#FFFFFF</color>
     <color name="bg_card2">#F0F4F2</color>
-    <color name="bg_toolbar">#142E26</color>
-    <color name="bg_sidebar">#142E26</color>
+    <color name="bg_toolbar">#01331C</color>
+    <color name="bg_sidebar">#01331C</color>
 
     <!-- Logo / brand -->
-    <color name="syncpedia_teal">#26A67D</color>
+    <color name="syncpedia_teal">#1E7A3C</color>
     <color name="syncpedia_blue">#378ADD</color>
     <color name="syncpedia_orange">#FF6200</color>
-    <color name="logo_teal">#26A67D</color>
+    <color name="logo_teal">#1E7A3C</color>
     <color name="logo_blue">#378ADD</color>
     <color name="logo_orange">#FF6200</color>
 
-    <color name="tab_selected">#26A67D</color>
+    <color name="tab_selected">#1E7A3C</color>
     <color name="tab_unselected">#1A2A2E</color>
 
     <color name="text_primary">#1A2A2E</color>
@@ -47,7 +47,10 @@
     <color name="status_converted">#2E7D32</color>
     <color name="status_lost">#E53935</color>
     <color name="chart_not_picked">#FF6200</color>
-    <color name="ic_launcher_background">#FFFFFF</color>
+    <color name="ic_launcher_background">#01331C</color>
+    <!-- Brand accent from the Syncpedia logo; use as a fill behind dark text, never as text on white. -->
+    <color name="brand_lime">#A1F954</color>
+    <color name="text_on_accent">#01331C</color>
 
     <!-- Login screen (dark branded) — matches Syncpedia login look -->
     <color name="login_bg">#0D0D0D</color>

@@ -146,6 +146,7 @@ class CallUploader(private val ctx: Context) {
                 }
                 usable?.absolutePath?.let { CallRecorder.markUploaded(ctx, it) }
                 lastError = null
+                AppCallStore.invalidateServerCache()
                 Log.d(TAG, "Website call log saved $raw")
                 true
             } else {

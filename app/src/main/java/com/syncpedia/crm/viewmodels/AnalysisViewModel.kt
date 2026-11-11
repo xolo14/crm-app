@@ -49,13 +49,16 @@ class AnalysisViewModel : ViewModel() {
     private var toMs: Long = Long.MAX_VALUE
 
     /** Load local + server CRM calls, then recompute KPIs for the active timeline. */
-    fun loadMerged(ctx: Context, from: Long = fromMs, to: Long = toMs) {
+    private var loadJob: kotlinx.coroutines.Job? = null
+
+    fun loadMerged(ctx: Context, from: Long = fromMs, to: Long = toMs, force: Boolean = false) {
         fromMs = from
         toMs = to
-        viewModelScope.launch {
+        loadJob?.cancel()
+        loadJob = viewModelScope.launch {
             _loading.value = true
             try {
-                val merged = AppCallStore.fetchMerged(ctx.applicationContext, appUploadsOnly = false)
+                val merged = AppCallStore.fetchMerged(ctx.applicationContext, appUploadsOnly = false, force = force)
                 _allCalls.value = merged
                 computeStats(merged, fromMs, toMs)
             } finally {

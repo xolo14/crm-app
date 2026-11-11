@@ -76,7 +76,7 @@ class CallsFragment : Fragment() {
         binding.swipeRefresh.setColorSchemeColors(
             ContextCompat.getColor(requireContext(), R.color.syncpedia_teal)
         )
-        binding.swipeRefresh.setOnRefreshListener { refresh() }
+        binding.swipeRefresh.setOnRefreshListener { viewModel.loadCalls(requireContext(), force = true) }
 
         binding.fabDialer.setOnClickListener {
             startActivity(Intent(requireContext(), DialPadActivity::class.java))
@@ -84,7 +84,7 @@ class CallsFragment : Fragment() {
 
         setupFilters()
         selectedTab = binding.tabAll
-        refresh()
+        // The first load runs in onResume, right after this.
     }
 
     private fun updateEmptyState(calls: List<CallLogItem>) {
@@ -169,6 +169,15 @@ class CallsFragment : Fragment() {
                             )
                         }
                         if (lead == null) return@withContext true
+                        // The lead was just created with this note; only log the activity.
+                        return@withContext RetrofitClient.api.createActivity(
+                            CreateActivityRequest(
+                                type = "note",
+                                subject = "Call note",
+                                description = note,
+                                leadId = lead.id
+                            )
+                        ).isSuccessful
                     } else {
                         RetrofitClient.api.createActivity(
                             CreateActivityRequest(
@@ -223,7 +232,7 @@ class CallsFragment : Fragment() {
             setTextColor(ContextCompat.getColor(requireContext(), R.color.text_muted))
         }
         tv.setBackgroundResource(R.drawable.bg_filter_selected)
-        tv.setTextColor(ContextCompat.getColor(requireContext(), R.color.text_on_primary))
+        tv.setTextColor(ContextCompat.getColor(requireContext(), R.color.text_on_accent))
         selectedTab = tv
     }
 

@@ -10,7 +10,11 @@ import com.syncpedia.crm.models.CallLogItem
 import com.syncpedia.crm.models.ServerCallLog
 import com.syncpedia.crm.network.RetrofitClient
 import com.syncpedia.crm.utils.AppCallStore
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 class CallsViewModel : ViewModel() {
 
@@ -31,16 +35,29 @@ class CallsViewModel : ViewModel() {
 
     private var currentFilter = "all"
 
-    fun loadCalls(ctx: Context) {
-        viewModelScope.launch {
-            val local = AppCallStore.getAll(ctx)
+    private var loadJob: Job? = null
+
+    fun loadCalls(ctx: Context, force: Boolean = false) {
+        val app = ctx.applicationContext
+        loadJob?.cancel()
+        loadJob = viewModelScope.launch {
+            // Show this device's calls immediately; server history fills in when it arrives.
+            val local = withContext(Dispatchers.IO) { AppCallStore.getAll(app) }
+            if (_calls.value.isNullOrEmpty()) {
+                _calls.value = local
+                filterCalls(currentFilter)
+            }
             val server = try {
-                AppCallStore.fetchAllServerCalls().also { _serverCalls.value = it }
+                AppCallStore.cachedServerCalls(force).also { _serverCalls.value = it }
+            } catch (e: CancellationException) {
+                throw e
             } catch (_: Exception) {
                 emptyList()
             }
             // Local app calls + server rows that have device_call_id (app uploads only)
-            _calls.value = AppCallStore.mergeWithServer(local, server)
+            _calls.value = withContext(Dispatchers.Default) {
+                AppCallStore.mergeWithServer(local, server)
+            }
             filterCalls(currentFilter)
         }
     }

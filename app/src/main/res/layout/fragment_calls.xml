@@ -28,7 +28,7 @@
                 style="@style/FilterTab"
                 android:background="@drawable/bg_filter_selected"
                 android:text="@string/all"
-                android:textColor="@color/text_on_primary"/>
+                android:textColor="@color/text_on_accent"/>
 
             <TextView
                 android:id="@+id/tabIncoming"

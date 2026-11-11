@@ -9,6 +9,10 @@ import android.widget.Toast
 import androidx.appcompat.widget.SearchView
 import androidx.core.content.ContextCompat
 import androidx.fragment.app.Fragment
+import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import androidx.recyclerview.widget.LinearLayoutManager
 import com.google.android.material.bottomsheet.BottomSheetDialog
 import com.syncpedia.crm.R
@@ -62,7 +66,7 @@ class ContactsFragment : Fragment() {
             }
         })
 
-        loadContacts()
+        // The first load runs in onResume.
     }
 
     private fun loadContacts() {
@@ -70,9 +74,14 @@ class ContactsFragment : Fragment() {
             PermissionHelper.requestAll(requireActivity())
             return
         }
-        allContacts = ContactReader.getAll(requireContext())
-        adapter.submit(allContacts)
-        updateEmptyState(allContacts)
+        val app = requireContext().applicationContext
+        viewLifecycleOwner.lifecycleScope.launch {
+            // Large phonebooks take seconds to read; keep it off the UI thread.
+            val contacts = withContext(Dispatchers.IO) { ContactReader.getAll(app) }
+            if (_binding == null) return@launch
+            allContacts = contacts
+            filter(binding.searchView.query?.toString().orEmpty())
+        }
     }
 
     private fun filter(query: String) {

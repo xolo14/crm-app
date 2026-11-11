@@ -72,8 +72,7 @@ class AnalysisFragment : Fragment() {
             if (!showingSummary) renderCards(it)
         }
         viewModel.chartData.observe(viewLifecycleOwner) { renderChart() }
-
-        refresh()
+        // The first load runs in onResume, right after this.
     }
 
     override fun onResume() {

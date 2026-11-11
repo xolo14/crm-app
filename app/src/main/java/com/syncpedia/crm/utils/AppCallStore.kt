@@ -12,6 +12,9 @@ import com.syncpedia.crm.network.RetrofitClient
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 import java.text.SimpleDateFormat
 import java.util.Locale
 import java.util.TimeZone
@@ -118,10 +121,43 @@ object AppCallStore {
      * @param appUploadsOnly when true, only server rows with device_call_id (app uploads).
      *                       when false, include all server call rows for this user (Analysis).
      */
-    suspend fun fetchMerged(ctx: Context, appUploadsOnly: Boolean = true): List<CallLogItem> {
-        val local = getAll(ctx)
-        val server = fetchAllServerCalls()
-        return mergeWithServer(local, server, appUploadsOnly)
+    suspend fun fetchMerged(
+        ctx: Context,
+        appUploadsOnly: Boolean = true,
+        force: Boolean = false
+    ): List<CallLogItem> {
+        val server = cachedServerCalls(force)
+        return withContext(Dispatchers.Default) {
+            mergeWithServer(getAll(ctx), server, appUploadsOnly)
+        }
+    }
+
+    private const val SERVER_CACHE_TTL_MS = 90_000L
+    @Volatile private var serverCache: List<ServerCallLog>? = null
+    @Volatile private var serverCacheAtMs = 0L
+    private val serverCacheLock = Mutex()
+
+    /** Server history shared by Calls / Analysis / detail screens; refetched after the TTL or on [force]. */
+    suspend fun cachedServerCalls(force: Boolean = false): List<ServerCallLog> =
+        serverCacheLock.withLock {
+            val cached = serverCache
+            if (!force && cached != null &&
+                System.currentTimeMillis() - serverCacheAtMs < SERVER_CACHE_TTL_MS
+            ) {
+                return@withLock cached
+            }
+            val fresh = withContext(Dispatchers.IO) { fetchAllServerCalls() }
+            // Keep the previous copy if the network failed rather than blanking the screen.
+            if (fresh.isNotEmpty() || cached == null) {
+                serverCache = fresh
+                serverCacheAtMs = System.currentTimeMillis()
+            }
+            serverCache.orEmpty()
+        }
+
+    fun invalidateServerCache() {
+        serverCache = null
+        serverCacheAtMs = 0L
     }
 
     suspend fun fetchAllServerCalls(
