@@ -84,8 +84,18 @@ class CallUploader(private val ctx: Context) {
             val silent = candidate != null &&
                 candidate.extension.lowercase() != "pdf" &&
                 AudioLevel.isSilent(candidate) == true
-            val usable = if (silent) null else candidate
-            if (silent) {
+            // No usable recording of our own (none, or silent): use the one the phone's own
+            // dialer made, when auto call recording is on in the manufacturer dialer.
+            val nativeTake: File? = if ((candidate == null || silent) && duration > 0) {
+                NativeCallRecordingImporter.findForCall(
+                    ctx, phoneNumber, calledAtMs, calledAtMs + duration * 1000L
+                )?.takeIf { AudioLevel.isSilent(it) != true }
+            } else null
+            val usable = nativeTake ?: if (silent) null else candidate
+            val reportNoAudio = silent && nativeTake == null
+            if (nativeTake != null) {
+                Log.i(TAG, "Using the phone dialer's recording ${nativeTake.name}")
+            } else if (silent) {
                 Log.w(TAG, "Recording ${candidate?.name} is silent — uploading the call without it")
             }
 
@@ -135,7 +145,7 @@ class CallUploader(private val ctx: Context) {
                         latitude = lat,
                         longitude = lng,
                         notes = "Synced from Syncpedia app",
-                        recordingStatus = if (silent) "no_audio" else null
+                        recordingStatus = if (reportNoAudio) "no_audio" else null
                     )
                 )
             }

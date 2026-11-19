@@ -18,6 +18,12 @@ object PermissionHelper {
         }
         add(Manifest.permission.READ_PHONE_STATE)
         add(Manifest.permission.RECORD_AUDIO)
+        // Picks up recordings made by the phone's own dialer (see NativeCallRecordingImporter).
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            add(Manifest.permission.READ_MEDIA_AUDIO)
+        } else {
+            add(Manifest.permission.READ_EXTERNAL_STORAGE)
+        }
         add(Manifest.permission.ACCESS_FINE_LOCATION)
         add(Manifest.permission.ACCESS_COARSE_LOCATION)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {

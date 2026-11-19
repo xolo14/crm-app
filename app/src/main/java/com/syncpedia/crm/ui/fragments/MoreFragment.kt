@@ -20,6 +20,7 @@ import com.syncpedia.crm.ui.LoginActivity
 import com.syncpedia.crm.ui.NotificationsActivity
 import com.syncpedia.crm.ui.SimRecordingActivity
 import com.syncpedia.crm.utils.DefaultDialerHelper
+import com.syncpedia.crm.utils.NativeCallRecordingImporter
 import com.syncpedia.crm.utils.NotificationSync
 import com.syncpedia.crm.utils.SessionManager
 import com.syncpedia.crm.utils.SimRecordingPrefs
@@ -73,12 +74,22 @@ class MoreFragment : Fragment() {
         binding.rowSyncNow.setOnClickListener { syncNow() }
 
         binding.rowDefaultDialer.setOnClickListener {
-            if (DefaultDialerHelper.isDefaultDialer(requireContext())) {
-                Toast.makeText(requireContext(), "Already the default Phone app", Toast.LENGTH_SHORT)
-                    .show()
-            } else {
-                DefaultDialerHelper.requestDefaultDialer(requireActivity())
-            }
+            // Recordings now come from the phone's own dialer (auto call recording), because
+            // Android doesn't let third-party apps hear calls. That only works while the
+            // phone's dialer handles calls, so point the rep to the right setting.
+            val msg = if (DefaultDialerHelper.isDefaultDialer(requireContext()))
+                "Syncpedia is your Phone app, so your phone's own call recorder can't record. " +
+                    "Open Settings → Apps → Default apps → Phone app, choose your phone's dialer, " +
+                    "then turn on automatic call recording in that dialer."
+            else
+                "Calls you place from Syncpedia are recorded by your phone's own dialer. " +
+                    "Turn on automatic call recording in your dialer's settings; Syncpedia " +
+                    "uploads each recording after the call."
+            android.app.AlertDialog.Builder(requireContext())
+                .setTitle("Call recording")
+                .setMessage(msg)
+                .setPositiveButton("OK", null)
+                .show()
         }
 
         binding.rowRecordings.setOnClickListener {
@@ -126,9 +137,11 @@ class MoreFragment : Fragment() {
     private fun refreshDialerRow() {
         binding.tvDefaultDialerLabel.text =
             if (DefaultDialerHelper.isDefaultDialer(requireContext()))
-                "Default Phone app · ON (two-way recording)"
+                "Recording: switch back to your phone's dialer — tap for steps"
+            else if (!NativeCallRecordingImporter.hasPermission(requireContext()))
+                "Recording: allow audio access so calls can be uploaded"
             else
-                "Set as default Phone app (required for recording)"
+                "Recording: uses your phone's call recorder — tap for setup"
     }
 
     private fun refreshSimRecordingRow() {

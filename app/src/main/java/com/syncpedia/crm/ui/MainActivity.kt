@@ -103,8 +103,6 @@ class MainActivity : AppCompatActivity() {
 
             if (!PermissionHelper.hasAll(this)) {
                 PermissionHelper.requestAll(this)
-            } else {
-                DefaultDialerHelper.promptIfNeeded(this)
             }
 
             try {
@@ -173,7 +171,8 @@ class MainActivity : AppCompatActivity() {
         super.onResume()
         if (::binding.isInitialized) {
             if (!ensureLoggedIn()) return
-            checkDefaultDialer()
+            // No default-Phone-app prompt: recording relies on the phone's own dialer now
+            // (see NativeCallRecordingImporter); making Syncpedia the dialer would stop it.
             lifecycleScope.launch {
                 withContext(Dispatchers.IO) {
                     NotificationSync.syncAndNotify(this@MainActivity)
