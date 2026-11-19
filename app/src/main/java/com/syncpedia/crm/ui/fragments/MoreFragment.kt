@@ -144,15 +144,23 @@ class MoreFragment : Fragment() {
             val statusLine = when (workState) {
                 WorkInfo.State.RUNNING -> "Syncing calls…"
                 WorkInfo.State.ENQUEUED -> "Sync queued…"
-                WorkInfo.State.FAILED -> "Sync failed — tap to retry"
-                WorkInfo.State.SUCCEEDED -> "Synced ✓ — ${getRelativeTime()}"
+                WorkInfo.State.FAILED ->
+                    if (summary.failed + summary.pending > 0) "Sync didn't finish — tap to try again"
+                    else "All calls synced · ${getRelativeTime()}"
+                WorkInfo.State.SUCCEEDED -> "All calls synced · ${getRelativeTime()}"
                 else -> when {
-                    summary.failed > 0 || SyncPrefs.needsManual(requireContext()) != null ->
+                    // A saved message only counts while something is actually failed/pending;
+                    // otherwise it is stale (e.g. the call uploaded later) and is cleared.
+                    summary.failed > 0 ->
                         SyncPrefs.needsManual(requireContext())
-                            ?: "Auto sync failed — tap Sync when online"
+                            ?: "Some calls didn't upload — tap to try again"
                     summary.pending + summary.uploading > 0 ->
-                        "Waiting to sync — tap Sync if auto failed"
-                    else -> "Last sync: ${getRelativeTime()}"
+                        SyncPrefs.needsManual(requireContext())
+                            ?: "Waiting to upload — tap to sync now"
+                    else -> {
+                        SyncPrefs.setNeedsManual(requireContext(), null)
+                        "All calls synced · ${getRelativeTime()}"
+                    }
                 }
             }
             binding.tvSyncLabel.text = statusLine

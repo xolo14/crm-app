@@ -3,6 +3,7 @@ package com.syncpedia.crm.utils
 import android.content.Context
 import com.syncpedia.crm.data.CallRecordRepository
 import com.syncpedia.crm.models.CallLogItem
+import com.syncpedia.crm.workers.SyncPrefs
 import kotlinx.coroutines.sync.withLock
 
 /** Uploads waiting calls immediately in this process, not via WorkManager. */
@@ -31,7 +32,11 @@ object PendingCallSync {
         for (item in local) {
             if (item.id !in merged) merged[item.id] = item to roomPaths[item.id]
         }
-        if (merged.isEmpty()) return "No saved calls waiting to upload"
+        if (merged.isEmpty()) {
+            // Nothing to send: clear any old "upload failed" banner on the More screen.
+            SyncPrefs.setNeedsManual(app, null)
+            return "Everything is already synced"
+        }
 
         val uploader = CallUploader(app)
         var sent = 0
@@ -48,11 +53,12 @@ object PendingCallSync {
             }
         }
         return if (sent == merged.size) {
-            "Uploaded $sent call(s) to the website"
+            SyncPrefs.setNeedsManual(app, null)
+            if (sent == 1) "Uploaded 1 call to the CRM" else "Uploaded $sent calls to the CRM"
         } else if (sent > 0) {
-            "Uploaded $sent, failed ${merged.size - sent}: ${lastFail ?: "website rejected"}"
+            "Uploaded $sent of ${merged.size} calls. ${merged.size - sent} didn't upload: ${lastFail ?: "the CRM rejected it"}"
         } else {
-            lastFail ?: "Website did not accept the call"
+            lastFail ?: "The CRM didn't accept the upload — try again"
         }
     }
 }

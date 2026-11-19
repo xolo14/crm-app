@@ -170,7 +170,7 @@ class SyncWorker(
 
         val isManual = inputData.getBoolean("manual", false)
         if (!hasInternet(applicationContext)) {
-            val reason = "No internet — tap Sync when online"
+            val reason = "No internet — calls will upload when you're back online"
             if (!isManual) {
                 SyncPrefs.setNeedsManual(applicationContext, reason)
                 Log.w(TAG, "Auto sync skipped, left for manual: $reason")
@@ -215,6 +215,7 @@ class SyncWorker(
                         repo.markSynced(deviceCallId, deleteRecording = SyncPrefs.deleteAfterSync(applicationContext))
                     }
                     stampLastSync()
+                    clearStaleNeedsManual(repo)
                     Result.success()
                 }
                 runAttemptCount < 3 -> {
@@ -251,7 +252,11 @@ class SyncWorker(
             }
         }
         val toUpload = merged.values.toList()
-        if (toUpload.isEmpty()) return Result.success()
+        if (toUpload.isEmpty()) {
+            stampLastSync()
+            SyncPrefs.setNeedsManual(applicationContext, null)
+            return Result.success()
+        }
 
         var bulkLat: Double? = null
         var bulkLng: Double? = null
@@ -329,15 +334,23 @@ class SyncWorker(
                 stampLastSync()
                 SyncPrefs.setNeedsManual(
                     applicationContext,
-                    if (deferredAny) "Large recording waiting for Wi‑Fi — tap Sync to upload now" else null
+                    if (deferredAny) "Large recording waiting for Wi‑Fi — tap to upload it now" else null
                 )
                 Result.success()
             }
             isManual && runAttemptCount < 3 -> Result.retry()
             else -> {
-                SyncPrefs.setNeedsManual(applicationContext, "Upload failed — tap Sync when online")
+                SyncPrefs.setNeedsManual(applicationContext, "Some calls didn't upload — tap to try again")
                 Result.failure()
             }
+        }
+    }
+
+    /** Drop the saved failure message once nothing is pending or failed any more. */
+    private suspend fun clearStaleNeedsManual(repo: CallRecordRepository) {
+        val s = repo.syncSummary()
+        if (s.failed == 0 && s.pending + s.uploading == 0) {
+            SyncPrefs.setNeedsManual(applicationContext, null)
         }
     }
 
