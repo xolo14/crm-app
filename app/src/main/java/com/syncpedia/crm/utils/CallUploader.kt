@@ -78,7 +78,16 @@ class CallUploader(private val ctx: Context) {
             val (callDate, callTime) = formatLocalDateTime(calledAtMs)
             val name = contactName.ifBlank { phone.ifBlank { "Unknown" } }
             val file = recordingFile ?: recordingPath?.let { File(it) }
-            val usable = file?.takeIf { it.exists() && it.length() >= RecordingConfig.MIN_FILE_SIZE }
+            val candidate = file?.takeIf { it.exists() && it.length() >= RecordingConfig.MIN_FILE_SIZE }
+            // Don't upload silence: decode and check the real level. A silent take is reported
+            // as recording_status=no_audio so the CRM shows "Recording failed — no audio".
+            val silent = candidate != null &&
+                candidate.extension.lowercase() != "pdf" &&
+                AudioLevel.isSilent(candidate) == true
+            val usable = if (silent) null else candidate
+            if (silent) {
+                Log.w(TAG, "Recording ${candidate?.name} is silent — uploading the call without it")
+            }
 
             Log.d(
                 TAG,
@@ -125,7 +134,8 @@ class CallUploader(private val ctx: Context) {
                         deviceCallId = deviceCallId,
                         latitude = lat,
                         longitude = lng,
-                        notes = "Synced from Syncpedia app"
+                        notes = "Synced from Syncpedia app",
+                        recordingStatus = if (silent) "no_audio" else null
                     )
                 )
             }
@@ -145,6 +155,8 @@ class CallUploader(private val ctx: Context) {
                     AppCallStore.markLocalSynced(ctx, id)
                 }
                 usable?.absolutePath?.let { CallRecorder.markUploaded(ctx, it) }
+                // The silent take is done with too (reported, not uploaded) — don't retry it.
+                if (silent) candidate?.absolutePath?.let { CallRecorder.markUploaded(ctx, it) }
                 lastError = null
                 AppCallStore.invalidateServerCache()
                 Log.d(TAG, "Website call log saved $raw")

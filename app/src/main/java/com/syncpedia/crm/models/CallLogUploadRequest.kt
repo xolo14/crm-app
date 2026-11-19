@@ -17,5 +17,7 @@ data class CallLogUploadRequest(
     @SerializedName("latitude") val latitude: Double? = null,
     @SerializedName("longitude") val longitude: Double? = null,
     @SerializedName("notes") val notes: String? = null,
-    @SerializedName("lead_id") val leadId: String? = null
+    @SerializedName("lead_id") val leadId: String? = null,
+    /** "no_audio" when the phone recorded the call but captured only silence. */
+    @SerializedName("recording_status") val recordingStatus: String? = null
 )
