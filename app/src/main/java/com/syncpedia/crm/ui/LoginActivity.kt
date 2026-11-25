@@ -5,7 +5,6 @@ import android.os.Bundle
 import android.util.Log
 import android.util.Patterns
 import android.view.View
-import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.credentials.CredentialManager
@@ -292,7 +291,6 @@ class LoginActivity : AppCompatActivity() {
 
     private fun showLoginError(message: String) {
         val short = sanitizeError(message).ifBlank { "Login failed" }
-        Toast.makeText(this, short, Toast.LENGTH_LONG).show()
         AlertDialog.Builder(this)
             .setTitle("Login failed")
             .setMessage(short)

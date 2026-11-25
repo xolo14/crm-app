@@ -292,7 +292,13 @@ class LeadsViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    fun addNoteActivity(leadId: String, note: String) {
+    /**
+     * @param syncToNotes Append this note onto lead.notes too (for the "Add Activity" quick-note
+     *   flow, which has no other way to put the text on the lead). Pass false when the caller
+     *   already saved lead.notes directly (Save Notes) — otherwise this re-reads the local,
+     *   not-yet-refreshed lead.notes and races that save with a second, stale-concatenated write.
+     */
+    fun addNoteActivity(leadId: String, note: String, syncToNotes: Boolean = true) {
         viewModelScope.launch {
             try {
                 val resp = RetrofitClient.api.createActivity(
@@ -304,11 +310,13 @@ class LeadsViewModel(app: Application) : AndroidViewModel(app) {
                     )
                 )
                 if (resp.isSuccessful) {
-                    // Also persist on lead.notes for website visibility
-                    val lead = _leads.value.orEmpty().firstOrNull { it.id == leadId }
-                    val merged = listOfNotNull(lead?.notes?.takeIf { it.isNotBlank() }, note)
-                        .joinToString("\n\n")
-                    updateLead(leadId, UpdateLeadRequest(notes = merged))
+                    if (syncToNotes) {
+                        // Also persist on lead.notes for website visibility
+                        val lead = _leads.value.orEmpty().firstOrNull { it.id == leadId }
+                        val merged = listOfNotNull(lead?.notes?.takeIf { it.isNotBlank() }, note)
+                            .joinToString("\n\n")
+                        updateLead(leadId, UpdateLeadRequest(notes = merged))
+                    }
                     fetchActivities(leadId)
                 } else {
                     _error.value = "Could not save note"

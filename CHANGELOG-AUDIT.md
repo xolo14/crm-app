@@ -7,7 +7,98 @@ backend under `/api` (bootstrap, helpers, db, auth/login, calls/index+upload, le
 analytics, auth_check). Not every one of the ~90 Kotlin files got a line-by-line pass —
 see "Not reviewed / unverifiable" at the bottom.
 
-## Fixed this pass
+## 2026-11-12 pass — "does recording actually work on every phone, and why aren't files in the Files app"
+
+### 8. Real calls never used the robust recording engine — the live path had no silence detection at all (most important finding)
+
+`CallRecorder.kt` contains an elaborate, well-built recording engine: AudioRecord + LAME MP3,
+a 5-source priority list (`VOICE_CALL → VOICE_DOWNLINK → VOICE_RECOGNITION → CAMCORDER → MIC`),
+a silence watchdog that polls peak amplitude and **switches sources mid-call** if the current
+one turns out to be silent, and only keeps a file if its peak amplitude actually passed a
+threshold. I searched the whole app for calls to `CallRecorder.start()`/`startRecording()` —
+**there are none.** Every real call goes through `SyncpediaInCallService.trySource()` instead,
+which is a much simpler, separate implementation:
+
+- plain `MediaRecorder` with only 3 sources (`VOICE_CALL → VOICE_DOWNLINK → MIC`)
+- **no amplitude/silence checking at all**, mid-call or at stop — `stopRecorderValidated()`
+  only checked `file.length() > 2048L`
+- no mid-call source switching
+
+This matters because `VOICE_CALL`/`VOICE_DOWNLINK` frequently "succeed" (MediaRecorder's
+`prepare()`/`start()` throw no exception) on Samsung One UI, Xiaomi/MIUI, Vivo/Oppo/realme and
+other OEMs that block the actual call-audio mix for policy reasons — the recorder runs for the
+whole call and produces a real, 2KB+ file that is **pure silence**. The old code had no way to
+tell that apart from a real recording, so on a large share of real-world Android phones the app
+would silently "succeed" at recording a call, mark it `isSynced=true`/"Synced" in the UI, and
+upload a useless silent file to the CRM — with the user having no idea anything was wrong.
+
+**So, to directly answer "is it really recording on all phones": no — on devices that block
+`VOICE_CALL`/`VOICE_DOWNLINK` audio mixing, the app was recording silence and reporting success.**
+
+**Fix** (`SyncpediaInCallService.kt`):
+- Added `scheduleSilenceWatch()`, which polls `MediaRecorder.maxAmplitude` every 500ms (reusing
+  `RecordingConfig.silencePeakThreshold()`, the same threshold logic `CallRecorder` already
+  used). If a non-air-capture source (`VOICE_CALL`/`VOICE_DOWNLINK`) stays silent for ~3s, it
+  calls `switchAwayFromSilentSource()`, which discards the silent take and starts the next
+  untried source (ultimately `MIC`, which always captures *something* once the user has the
+  speaker on, and is flagged to the user via a status message if it's still quiet).
+- `stopRecorderValidated()` now also requires the tracked peak amplitude to have crossed the
+  threshold for `VOICE_CALL`/`VOICE_DOWNLINK` takes before registering the file (air-capture/MIC
+  keeps the old size-only check, since quiet real speech there can legitimately have a low peak).
+  A call that ends before 3s on a silent source is now correctly discarded instead of kept.
+- This is not a full port of `CallRecorder`'s engine (that would be a bigger refactor: switch
+  `SyncpediaInCallService` to reuse `CallRecorder.start()/stop()` directly instead of its own
+  `MediaRecorder` calls) — it's the minimum change that gives the *live* call path the same
+  silence-detection safety net the unused engine already had. Consider the bigger refactor
+  (delete the duplicate `MediaRecorder` logic in `SyncpediaInCallService`, call into
+  `CallRecorder` instead) as a follow-up so there's only one recording engine to maintain.
+
+### 9. Recordings never appeared in the phone's Files app by default
+
+`CallRecorder.getRecordingsDir()` saves to `getExternalFilesDir(DIRECTORY_RECORDINGS)` —
+`Android/data/com.syncpedia.crm/files/Recordings/...`. That's app-private external storage:
+on Android 11+ most file manager apps can't browse `Android/data/*` at all (Google restricted
+it), so recordings were invisible outside the app. The only way to get a copy into the public
+Files app was a **manual, per-recording** long-press → "Save to Downloads" in
+`CallRecordingsActivity` — nothing copied them there automatically.
+
+**Fix:** added `CallRecorder.exportToDownloads()`, called automatically (default **on**, toggle via
+`CallRecorder.setAutoSaveToDownloads()`) every time a recording is kept — from both
+`CallRecorder.remember()` (the AudioRecord/MP3 path) and transitively from
+`registerExternal()` (the `SyncpediaInCallService` MediaRecorder path, since it also calls
+`remember()`). It copies into `Downloads/Syncpedia CRM/<contact>_<timestamp>.<ext>` via
+`MediaStore` on Android 10+ (no extra permission needed) or direct file copy +
+`MediaScannerConnection.scanFile()` on Android 8–9 (only if storage permission is already
+granted — this runs from a background/service context with no Activity to prompt from). Runs
+on `Dispatchers.IO`, never blocks the call-recording thread, and never throws into the caller.
+
+### 10. `WRITE_EXTERNAL_STORAGE` was never declared — manual "Save to Downloads" was silently broken on Android 8–9
+
+`CallRecordingsActivity.saveToDownloads()` requests `Manifest.permission.WRITE_EXTERNAL_STORAGE`
+via `registerForActivityResult(RequestPermission())` on API < 29, but the permission was **not
+declared in `AndroidManifest.xml`**. An undeclared permission can't be granted — the system
+either auto-denies the request without ever showing the dialog, or the behavior is undefined
+depending on OEM. On real Android 8.0/8.1/9 devices (within this app's `minSdk 26`), tapping
+"Save to Downloads" would just fail with the "Storage permission is needed" toast forever, with
+no way for the user to actually grant it from Settings (it isn't listed there either).
+
+**Fix:** added `<uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="28"/>` to `AndroidManifest.xml`.
+
+### 11. Confirmed: per-device "known-good source" memoization already exists — no change needed
+
+Asked whether the engine needs an upgrade to remember which audio source worked on a given
+phone, to skip straight past `VOICE_CALL`/`VOICE_DOWNLINK` probing on OEMs that always block
+them. Checked `SyncpediaInCallService.kt` and this is already implemented, pre-existing in
+this codebase (not added in any audit pass): `startRecordingInternal()` reads
+`prefs.getInt(KEY_SRC, -1)` and tries that remembered source first (`order = listOf(saved) +
+SOURCES.filter { it != saved }`), and both `switchAwayFromSilentSource()` and the failure
+branch of `stopRecorderValidated()` clear that saved value whenever the remembered source
+turns out silent or invalid — so a firmware update that breaks a previously-working source
+doesn't get stuck on it forever. No `Build.MODEL` keying is needed since one app install only
+ever runs on one physical phone, so per-install `SharedPreferences` already is per-device.
+No code change made.
+
+## Fixed previously (earlier passes)
 
 1. **Login fallback bypassed certificate pinning** — `app/src/main/java/com/syncpedia/crm/ui/LoginActivity.kt`
    `rawLogin()` built a brand-new `OkHttpClient` with no `CertificatePinner`, so the one

@@ -31,6 +31,7 @@ import com.syncpedia.crm.utils.SimRecordingPrefs
 import com.syncpedia.crm.workers.SyncWorker
 import java.io.File
 import java.io.IOException
+import kotlin.math.max
 
 /**
  * System InCall UI + the ONLY call recorder (one MediaRecorder per call).
@@ -45,12 +46,11 @@ class SyncpediaInCallService : InCallService() {
         private const val NOTIF_CHANNEL = "recording_channel"
         private const val NOTIF_ID = 1001
 
-        /** Prefer VOICE_CALL → VOICE_DOWNLINK → MIC (speaker air-capture). */
-        private val SOURCES = listOf(
-            MediaRecorder.AudioSource.VOICE_CALL,
-            MediaRecorder.AudioSource.VOICE_DOWNLINK,
-            MediaRecorder.AudioSource.MIC
-        )
+        /** Source attempt order — single source of truth, was a stale private duplicate of
+         *  RecordingConfig.SOURCE_PRIORITY that never tried VOICE_RECOGNITION/CAMCORDER (the
+         *  fallbacks some OEMs, Vivo/iQOO included, allow even when VOICE_CALL/VOICE_DOWNLINK
+         *  are hard-blocked for non-system apps). */
+        private val SOURCES = com.syncpedia.crm.utils.RecordingConfig.SOURCE_PRIORITY
 
         @Volatile var currentCall: Call? = null
             private set
@@ -192,6 +192,14 @@ class SyncpediaInCallService : InCallService() {
     private var activeSource = -1
     private var pendingRecordingFile: File? = null
     private var answeredMs = 0L
+
+    // Silence detection: VOICE_CALL/VOICE_DOWNLINK often "succeed" (prepare+start don't throw)
+    // on OEMs that block the actual audio mix (Samsung/Xiaomi/Vivo/Oppo and others), producing
+    // a real-sized file that is pure silence. file.length() alone can't tell the difference.
+    private var recPeak = 0
+    private var silentChecks = 0
+    private val triedSources = mutableSetOf<Int>()
+    private val silenceWatchToken = Any()
 
     override fun onCreate() {
         super.onCreate()
@@ -403,20 +411,31 @@ class SyncpediaInCallService : InCallService() {
             SOURCES
         }
 
+        triedSources.clear()
         // Android 11+ only delivers mic audio in the background if the microphone foreground
         // service is already running, so start it before the recorder.
         showRecordingNotification()
         for (src in order) {
+            triedSources.add(src)
             if (trySource(src)) {
                 activeSource = src
                 activeSourceName = sourceLabel(src)
                 prefs.edit().putInt(KEY_SRC, src).apply()
                 isCapturing = true
                 recordingSegmentStartElapsed = SystemClock.elapsedRealtime()
+                // Air-capture sources (MIC/CAMCORDER/VOICE_RECOGNITION) only hear audio that's
+                // actually playing out loud — on OEMs that block VOICE_CALL/VOICE_DOWNLINK for
+                // third-party apps (Vivo/iQOO among them), this is the only way these sources
+                // ever produce anything but near-silence. Force it on rather than just telling
+                // the user to — that's what already-working third-party recorders do here.
+                if (com.syncpedia.crm.utils.RecordingConfig.isAirCapture(src) && !isSpeakerOn) {
+                    forceSpeakerForAirCapture()
+                }
                 CallRecorder.setStatusPublic(this, "Recording · $activeSourceName")
                 InCallActivity.onRecordingStarted(activeSourceName)
                 InCallActivity.refreshRecordingUi()
                 Log.i(TAG, "Recording source=$src file=${outputFile?.name}")
+                scheduleSilenceWatch()
                 return
             }
         }
@@ -425,6 +444,97 @@ class SyncpediaInCallService : InCallService() {
         CallRecorder.setStatusPublic(this, "Could not find an audible recording source")
         recordingDesired = false
         InCallActivity.refreshRecordingUi()
+    }
+
+    /**
+     * VOICE_CALL / VOICE_DOWNLINK often start successfully but write silence on OEMs that
+     * block the real call-audio mix. Poll MediaRecorder.maxAmplitude; if a non-air-capture
+     * source stays silent for ~3s, switch to the next source (ultimately MIC, which always
+     * captures something once the user has speaker on) instead of silently keeping a
+     * useless recording for the whole call.
+     */
+    private fun scheduleSilenceWatch() {
+        mainHandler.removeCallbacksAndMessages(silenceWatchToken)
+        recPeak = 0
+        silentChecks = 0
+        val watchedSource = activeSource
+        val poll = object : Runnable {
+            override fun run() {
+                val mr = recorder ?: return
+                if (activeSource != watchedSource) return // a switch already happened
+                val amp = try { mr.maxAmplitude } catch (_: Exception) { 0 }
+                recPeak = max(recPeak, amp)
+                val threshold = com.syncpedia.crm.utils.RecordingConfig.silencePeakThreshold(
+                    this@SyncpediaInCallService,
+                    watchedSource
+                )
+                if (recPeak >= threshold) return // audible — stop watching, keep this source
+
+                silentChecks++
+                val isAirCapture = com.syncpedia.crm.utils.RecordingConfig.isAirCapture(watchedSource)
+                if (!isAirCapture && silentChecks >= 6) { // ~3s of pure silence
+                    Log.w(TAG, "Source ${sourceLabel(watchedSource)} silent after ${silentChecks * 500}ms — switching")
+                    switchAwayFromSilentSource()
+                    return
+                }
+                if (isAirCapture && silentChecks == 10) {
+                    CallRecorder.setStatusPublic(
+                        this@SyncpediaInCallService,
+                        "Still silent — turn Speaker on for the recording to pick up audio"
+                    )
+                }
+                mainHandler.postAtTime(this, silenceWatchToken, SystemClock.uptimeMillis() + 500L)
+            }
+        }
+        mainHandler.postAtTime(poll, silenceWatchToken, SystemClock.uptimeMillis() + 500L)
+    }
+
+    private fun switchAwayFromSilentSource() {
+        mainHandler.removeCallbacksAndMessages(silenceWatchToken)
+        // Discard the silent take — don't keep/upload it, and don't persist it as "working".
+        try { recorder?.stop() } catch (_: Exception) {}
+        try { recorder?.release() } catch (_: Exception) {}
+        recorder = null
+        try { outputFile?.delete() } catch (_: Exception) {}
+        outputFile = null
+        getSharedPreferences(PREFS, MODE_PRIVATE).edit().remove(KEY_SRC).apply()
+
+        val remaining = SOURCES.filter { it !in triedSources }
+        for (src in remaining) {
+            triedSources.add(src)
+            if (trySource(src)) {
+                activeSource = src
+                activeSourceName = sourceLabel(src)
+                if (com.syncpedia.crm.utils.RecordingConfig.isAirCapture(src) && !isSpeakerOn) {
+                    forceSpeakerForAirCapture()
+                }
+                CallRecorder.setStatusPublic(this, "Switched to $activeSourceName")
+                InCallActivity.onRecordingStarted(activeSourceName)
+                InCallActivity.refreshRecordingUi()
+                Log.i(TAG, "Switched recording source=$src file=${outputFile?.name}")
+                scheduleSilenceWatch()
+                return
+            }
+        }
+        Log.e(TAG, "All sources exhausted after silence — stopping recording for this call")
+        CallRecorder.setStatusPublic(this, "Could not find an audible recording source")
+        activeSource = -1
+        activeSourceName = ""
+        isCapturing = false
+        recordingDesired = false
+        hideRecordingNotification()
+        InCallActivity.refreshRecordingUi()
+    }
+
+    @Suppress("DEPRECATION")
+    private fun forceSpeakerForAirCapture() {
+        try {
+            setAudioRoute(android.telecom.CallAudioState.ROUTE_SPEAKER)
+            isSpeakerOn = true
+            InCallActivity.refreshAudioUi()
+        } catch (e: Exception) {
+            Log.w(TAG, "forceSpeakerForAirCapture: ${e.message}")
+        }
     }
 
     private fun trySource(src: Int): Boolean {
@@ -473,6 +583,10 @@ class SyncpediaInCallService : InCallService() {
     }
 
     private fun stopRecorderValidated(): File? {
+        mainHandler.removeCallbacksAndMessages(silenceWatchToken)
+        val peak = recPeak
+        val wasAirCapture = com.syncpedia.crm.utils.RecordingConfig.isAirCapture(activeSource)
+        val threshold = com.syncpedia.crm.utils.RecordingConfig.silencePeakThreshold(this, activeSource)
         return try {
             recorder?.stop()
             recorder?.release()
@@ -480,7 +594,12 @@ class SyncpediaInCallService : InCallService() {
             isCapturing = false
             val f = outputFile
             outputFile = null
-            if (f != null && f.exists() && f.length() > 2048L) {
+            // Keep MIC/air-capture takes on size alone (ambient speaker audio isn't always loud
+            // enough to clear the threshold, and a near-zero peak there can still be real quiet
+            // speech); for VOICE_CALL/VOICE_DOWNLINK demand an actual amplitude reading too —
+            // size alone can't tell a real two-way capture from pure silence on blocking OEMs.
+            val audible = wasAirCapture || peak >= threshold
+            if (f != null && f.exists() && f.length() > 2048L && audible) {
                 CallRecorder.registerExternal(
                     this,
                     f,
@@ -490,7 +609,7 @@ class SyncpediaInCallService : InCallService() {
                 )
                 f
             } else {
-                Log.w(TAG, "Recording silent (${f?.length()}B) — resetting source pref")
+                Log.w(TAG, "Recording discarded (${f?.length()}B, peak=$peak, threshold=$threshold) — resetting source pref")
                 getSharedPreferences(PREFS, MODE_PRIVATE).edit().remove(KEY_SRC).apply()
                 f?.delete()
                 null
@@ -598,6 +717,7 @@ class SyncpediaInCallService : InCallService() {
     }
 
     private fun releaseRecorder() {
+        mainHandler.removeCallbacksAndMessages(silenceWatchToken)
         try {
             recorder?.release()
         } catch (_: Exception) {
@@ -657,10 +777,6 @@ class SyncpediaInCallService : InCallService() {
         }
     }
 
-    private fun sourceLabel(src: Int): String = when (src) {
-        MediaRecorder.AudioSource.VOICE_CALL -> "VOICE_CALL"
-        MediaRecorder.AudioSource.VOICE_DOWNLINK -> "VOICE_DOWNLINK"
-        MediaRecorder.AudioSource.MIC -> "MIC"
-        else -> "SRC_$src"
-    }
+    private fun sourceLabel(src: Int): String =
+        com.syncpedia.crm.utils.RecordingConfig.shortSourceName(src)
 }

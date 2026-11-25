@@ -353,8 +353,10 @@ class LeadsFragment : Fragment() {
         sheet.btnSaveNotes.setOnClickListener {
             val notes = sheet.etDetailNotes.text?.toString()?.trim()
             viewModel.updateLead(lead.id, UpdateLeadRequest(notes = notes))
+            // Notes field was just set directly above — log the activity only, don't also
+            // re-merge/re-save notes (that raced the save above with stale concatenated text).
             if (!notes.isNullOrBlank()) {
-                viewModel.addNoteActivity(lead.id, notes)
+                viewModel.addNoteActivity(lead.id, notes, syncToNotes = false)
             }
         }
         sheet.btnAddActivity.setOnClickListener {

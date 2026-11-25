@@ -12,16 +12,24 @@ object SimRecordingPrefs {
     private const val PREFS = "sim_recording_prefs"
     private const val KEY_ENABLED = "enabled_sim_keys"
     private const val KEY_BOOTSTRAPPED = "bootstrapped"
+    /** Every simKey ever seen on this device — lets ensureBootstrap tell "a SIM that's
+     *  genuinely new" apart from "a known SIM whose key the OS just recomputed", so turning
+     *  a SIM off stays off instead of being silently re-enabled on the next app open. */
+    private const val KEY_KNOWN = "known_sim_keys"
 
     fun keyFor(
         subscriptionId: Int? = null,
         slotIndex: Int? = null,
         handle: PhoneAccountHandle? = null
     ): String {
+        // Slot index (the physical tray position) is the most stable identifier across app
+        // restarts — subscriptionId can be reassigned by the OS between cold starts on some
+        // OEMs, which previously caused the same physical SIM to get a different key each
+        // time and made a user's "off" choice silently revert (see ensureBootstrap below).
+        if (slotIndex != null && slotIndex >= 0) return "slot:$slotIndex"
         if (subscriptionId != null && subscriptionId >= 0) return "sub:$subscriptionId"
         val hid = handle?.id?.takeIf { it.isNotBlank() }
         if (hid != null) return "handle:$hid"
-        if (slotIndex != null && slotIndex >= 0) return "slot:$slotIndex"
         return "default"
     }
 
@@ -82,30 +90,48 @@ object SimRecordingPrefs {
     /** First launch: enable all currently available SIMs. Also enable newly appeared SIMs. */
     fun ensureBootstrap(ctx: Context) {
         val prefs = prefs(ctx)
-        val keys = AppDialer.listSimLines(ctx).map { it.simKey }.toSet()
+        val lines = AppDialer.listSimLines(ctx)
+        val keys = lines.map { it.simKey }.toSet()
             .ifEmpty { setOf("default") }
+        if (prefs.getBoolean(KEY_BOOTSTRAPPED, false) && !prefs.contains(KEY_KNOWN)) {
+            // Upgrade from a build that keyed SIMs by subscriptionId and had no known-set:
+            // translate the user's saved choices to the new slot keys instead of treating
+            // every SIM as brand new (which would re-enable SIMs they had turned off).
+            val oldEnabled = prefs.getStringSet(KEY_ENABLED, emptySet()).orEmpty()
+            val migrated = lines.filter { line ->
+                val candidates = buildSet {
+                    add(line.simKey)
+                    if (line.subscriptionId >= 0) add("sub:${line.subscriptionId}")
+                    if (line.slotIndex >= 0) add("slot:${line.slotIndex}")
+                    line.handle?.let { add(keyFor(handle = it)) }
+                }
+                candidates.any { it in oldEnabled }
+            }.map { it.simKey }.toSet() + oldEnabled.filter { it == "default" }
+            prefs.edit()
+                .putStringSet(KEY_ENABLED, migrated)
+                .putStringSet(KEY_KNOWN, keys)
+                .apply()
+            return
+        }
         if (!prefs.getBoolean(KEY_BOOTSTRAPPED, false)) {
             prefs.edit()
                 .putStringSet(KEY_ENABLED, keys)
+                .putStringSet(KEY_KNOWN, keys)
                 .putBoolean(KEY_BOOTSTRAPPED, true)
                 .apply()
             return
         }
-        // Auto-enable SIMs that appear after first launch (don't leave them silently off)
-        val enabled = prefs.getStringSet(KEY_ENABLED, emptySet())?.toMutableSet() ?: mutableSetOf()
-        var changed = false
-        for (k in keys) {
-            if (k !in enabled && enabled.isNotEmpty()) {
-                // Only auto-add if user hasn't turned everything off
-                val anyOn = enabled.isNotEmpty()
-                if (anyOn && keys.any { it in enabled }) {
-                    enabled.add(k)
-                    changed = true
-                }
-            }
-        }
-        if (changed) {
+        val known = prefs.getStringSet(KEY_KNOWN, emptySet())?.toSet() ?: emptySet()
+        // A key is a genuinely new SIM only the first time this device has ever seen it —
+        // not merely "currently disabled", which is also true of a SIM the user turned off.
+        val brandNew = keys.filter { it !in known }
+        if (brandNew.isNotEmpty()) {
+            val enabled = prefs.getStringSet(KEY_ENABLED, emptySet())?.toMutableSet() ?: mutableSetOf()
+            enabled.addAll(brandNew)
             prefs.edit().putStringSet(KEY_ENABLED, enabled.toSet()).apply()
+        }
+        if (!known.containsAll(keys)) {
+            prefs.edit().putStringSet(KEY_KNOWN, (known + keys).toSet()).apply()
         }
     }
 

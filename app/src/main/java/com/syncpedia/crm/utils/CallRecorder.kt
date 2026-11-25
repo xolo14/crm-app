@@ -1,20 +1,27 @@
 package com.syncpedia.crm.utils
 
 import android.Manifest
+import android.content.ContentValues
 import android.content.Context
 import android.content.pm.PackageManager
 import android.media.AudioFormat
 import android.media.AudioManager
 import android.media.AudioRecord
 import android.media.MediaRecorder
+import android.media.MediaScannerConnection
+import android.os.Build
 import android.os.Environment
 import android.os.Handler
 import android.os.Looper
+import android.provider.MediaStore
 import android.util.Log
 import androidx.core.content.ContextCompat
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
 import com.syncpedia.crm.models.CallLogItem
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import java.io.File
 import java.io.FileOutputStream
 import java.io.IOException
@@ -1077,6 +1084,90 @@ object CallRecorder {
             }
         }
         save(ctx, list)
+        if (autoSaveToDownloadsEnabled(ctx)) {
+            val appCtx = ctx.applicationContext
+            CoroutineScope(Dispatchers.IO).launch {
+                try {
+                    exportToDownloads(appCtx, item)
+                } catch (e: Exception) {
+                    Log.w(TAG, "auto-export to Downloads failed: ${e.message}")
+                }
+            }
+        }
+    }
+
+    private const val KEY_AUTO_SAVE_DOWNLOADS = "auto_save_downloads"
+
+    /** Default ON — without this, saved recordings only live in app-private storage and
+     * never show up in the phone's Files app, which is the whole point of recording calls. */
+    fun autoSaveToDownloadsEnabled(ctx: Context): Boolean =
+        ctx.applicationContext.getSharedPreferences(RecordingConfig.PREFS_NAME, Context.MODE_PRIVATE)
+            .getBoolean(KEY_AUTO_SAVE_DOWNLOADS, true)
+
+    fun setAutoSaveToDownloads(ctx: Context, enabled: Boolean) {
+        ctx.applicationContext.getSharedPreferences(RecordingConfig.PREFS_NAME, Context.MODE_PRIVATE)
+            .edit().putBoolean(KEY_AUTO_SAVE_DOWNLOADS, enabled).apply()
+    }
+
+    /**
+     * Copy a kept recording into the public Downloads/Syncpedia CRM folder so it shows up
+     * in the device's own Files app, not just inside this app's private storage
+     * (getExternalFilesDir, which most file managers hide/can't browse on Android 11+).
+     * Android 10+ (Q): MediaStore insert, no extra permission needed.
+     * Android 8–9: only if WRITE_EXTERNAL_STORAGE is already granted — this runs off a
+     * background/service context with no Activity to prompt for it.
+     */
+    private fun exportToDownloads(ctx: Context, item: RecordingItem) {
+        val src = File(item.path)
+        if (!src.exists() || src.length() < RecordingConfig.MIN_FILE_SIZE) return
+
+        val who = item.contactName.ifBlank { item.phone }.ifBlank { item.digits }.ifBlank { "Call" }
+            .replace(Regex("[^A-Za-z0-9+_-]+"), "_").trim('_').take(40).ifBlank { "Call" }
+        val ts = item.startedAtMs.takeIf { it > 0 } ?: item.endedAtMs
+        val stamp = SimpleDateFormat("yyyy-MM-dd_HH-mm-ss", Locale.US).format(Date(ts))
+        val ext = src.extension.ifBlank { "m4a" }
+        val fileName = "${who}_$stamp.$ext"
+        val mimeType = when (ext.lowercase(Locale.US)) {
+            "mp3" -> "audio/mpeg"
+            "wav" -> "audio/wav"
+            else -> "audio/mp4"
+        }
+        val subDir = "Syncpedia CRM"
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            val resolver = ctx.contentResolver
+            val values = ContentValues().apply {
+                put(MediaStore.MediaColumns.DISPLAY_NAME, fileName)
+                put(MediaStore.MediaColumns.MIME_TYPE, mimeType)
+                put(MediaStore.MediaColumns.RELATIVE_PATH, "${Environment.DIRECTORY_DOWNLOADS}/$subDir")
+                put(MediaStore.MediaColumns.IS_PENDING, 1)
+            }
+            val uri = resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values) ?: return
+            try {
+                resolver.openOutputStream(uri)?.use { out -> src.inputStream().use { it.copyTo(out) } }
+                values.clear()
+                values.put(MediaStore.MediaColumns.IS_PENDING, 0)
+                resolver.update(uri, values, null, null)
+                Log.i(TAG, "Auto-saved recording to Downloads/$subDir/$fileName")
+            } catch (e: Exception) {
+                try { resolver.delete(uri, null, null) } catch (_: Exception) {}
+                throw e
+            }
+        } else {
+            if (ContextCompat.checkSelfPermission(ctx, Manifest.permission.WRITE_EXTERNAL_STORAGE) !=
+                PackageManager.PERMISSION_GRANTED
+            ) {
+                Log.w(TAG, "Skipping auto-save to Downloads — storage permission not granted (Android < 10)")
+                return
+            }
+            @Suppress("DEPRECATION")
+            val dir = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), subDir)
+            dir.mkdirs()
+            val dest = File(dir, fileName)
+            src.copyTo(dest, overwrite = true)
+            MediaScannerConnection.scanFile(ctx, arrayOf(dest.absolutePath), arrayOf(mimeType), null)
+            Log.i(TAG, "Auto-saved recording to Downloads/$subDir/$fileName")
+        }
     }
 
     private fun load(ctx: Context): List<RecordingItem> {

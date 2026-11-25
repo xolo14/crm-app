@@ -237,10 +237,12 @@ object AnalysisCalculator {
     private fun isUnknown(c: CallLogItem): Boolean =
         c.contactName.isBlank() || c.contactName.equals("Unknown", true)
 
+    /** Zero-padded day-of-year so string sort order matches chronological order
+     *  (gapDays() sorts these as strings — "45" otherwise sorts after "328"). */
     private fun dayKey(ms: Long): String {
         val c = Calendar.getInstance()
         c.timeInMillis = ms
-        return "${c.get(Calendar.YEAR)}-${c.get(Calendar.DAY_OF_YEAR)}"
+        return "${c.get(Calendar.YEAR)}-${c.get(Calendar.DAY_OF_YEAR).toString().padStart(3, '0')}"
     }
 
     private fun startOfDay(ms: Long): Long {

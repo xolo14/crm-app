@@ -1,39 +1,41 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- Website-aligned light CRM + Syncpedia logo colors -->
-    <color name="bg_dark">#F7F9F8</color>
-    <color name="bg_page">#F7F9F8</color>
-    <color name="bg_card">#FFFFFF</color>
-    <color name="bg_card2">#F0F4F2</color>
-    <color name="bg_toolbar">#01331C</color>
-    <color name="bg_sidebar">#01331C</color>
+    <!-- Website-aligned light CRM + Syncpedia logo colors.
+         Hex values below are copied verbatim from the web app's src/index.css :root block
+         and src/lib/chartTheme.ts STATUS_HEX, so the two apps render the same brand. -->
+    <color name="bg_dark">#F6F8F6</color>          <!-- web background (canvas) -->
+    <color name="bg_page">#F6F8F6</color>           <!-- web background -->
+    <color name="bg_card">#FFFFFF</color>           <!-- web card -->
+    <color name="bg_card2">#F0F5F2</color>          <!-- web muted -->
+    <color name="bg_toolbar">#00261A</color>        <!-- web sidebar background (brand-950) -->
+    <color name="bg_sidebar">#00261A</color>        <!-- web sidebar background (brand-950) -->
 
     <!-- Logo / brand -->
-    <color name="syncpedia_teal">#1E7A3C</color>
-    <color name="syncpedia_blue">#378ADD</color>
+    <color name="syncpedia_teal">#00381F</color>    <!-- web primary / brand-900 (logo forest) -->
+    <color name="syncpedia_blue">#2A78D6</color>    <!-- web info -->
     <color name="syncpedia_orange">#FF6200</color>
-    <color name="logo_teal">#1E7A3C</color>
-    <color name="logo_blue">#378ADD</color>
+    <color name="logo_teal">#00381F</color>
+    <color name="logo_blue">#2A78D6</color>
     <color name="logo_orange">#FF6200</color>
 
-    <color name="tab_selected">#1E7A3C</color>
-    <color name="tab_unselected">#1A2A2E</color>
+    <color name="tab_selected">#00381F</color>      <!-- web brand-900 -->
+    <color name="tab_unselected">#5E6E66</color>    <!-- web ink-400 -->
 
-    <color name="text_primary">#1A2A2E</color>
-    <color name="text_secondary">#5C6F6A</color>
-    <color name="text_muted">#8A9A96</color>
+    <color name="text_primary">#0E1A14</color>      <!-- web ink-900 (headings) -->
+    <color name="text_secondary">#4A5A52</color>    <!-- web ink-600 (body) -->
+    <color name="text_muted">#5E6E66</color>        <!-- web ink-400 (captions/axis) -->
     <color name="text_on_primary">#FFFFFF</color>
     <color name="text_on_toolbar">#FFFFFF</color>
 
-    <color name="incoming_green">#26A67D</color>
-    <color name="outgoing_blue">#378ADD</color>
-    <color name="missed_red">#E53935</color>
+    <color name="incoming_green">#13804E</color>    <!-- web brand-500 (positive delta) -->
+    <color name="outgoing_blue">#2A78D6</color>     <!-- web info -->
+    <color name="missed_red">#D03B3B</color>        <!-- web destructive -->
     <color name="rejected_red">#D81B60</color>
-    <color name="divider">#E5EBE8</color>
+    <color name="divider">#E3E9E5</color>           <!-- web border -->
 
-    <color name="orange_warning">#FF6200</color>
+    <color name="orange_warning">#D98A00</color>    <!-- web warning (STATUS_HEX.warning) -->
     <color name="banner_bg">#FFF3E0</color>
-    <color name="logout_red">#E53935</color>
+    <color name="logout_red">#D03B3B</color>        <!-- web destructive -->
     <color name="nav_bg">#FFFFFF</color>
 
     <color name="status_new">#378ADD</color>
@@ -52,10 +54,11 @@
     <color name="brand_lime">#A1F954</color>
     <color name="text_on_accent">#01331C</color>
 
-    <!-- Login screen (dark branded) — matches Syncpedia login look -->
-    <color name="login_bg">#0D0D0D</color>
-    <color name="login_card">#1A1A1A</color>
+    <!-- Login screen (dark branded), matches Syncpedia login look.
+         Was neutral black; web's dark surfaces are always green-tinted, never neutral. -->
+    <color name="login_bg">#0B1712</color>         <!-- web dark-mode background -->
+    <color name="login_card">#0F1F18</color>       <!-- web dark-mode card -->
     <color name="login_title">#9AA8B5</color>
-    <color name="login_subtitle">#8A9A96</color>
-    <color name="login_field_text">#E8EEEC</color>
+    <color name="login_subtitle">#5E6E66</color>   <!-- web ink-400 -->
+    <color name="login_field_text">#E8F0EB</color> <!-- web dark-mode foreground -->
 </resources>
