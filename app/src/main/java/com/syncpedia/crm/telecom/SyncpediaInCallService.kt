@@ -633,6 +633,8 @@ class SyncpediaInCallService : InCallService() {
         }
 
         cancelPendingRecordingStarts()
+        // A call handled by the app counts as use, so call-only reps stay signed in and synced.
+        com.syncpedia.crm.utils.SessionManager.getInstance(this).markActive()
         try {
             call.unregisterCallback(callback)
         } catch (_: Exception) {

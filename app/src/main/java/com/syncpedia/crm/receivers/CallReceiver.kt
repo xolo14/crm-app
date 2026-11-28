@@ -123,6 +123,7 @@ class CallReceiver : BroadcastReceiver() {
                         val canLogDetails = fromApp || incoming
                         val simAllowed = simKey == null || SimRecordingPrefs.isSimAllowed(context, simKey)
                         if (canLogDetails && simAllowed && phone.isNotBlank()) {
+                            com.syncpedia.crm.utils.SessionManager.getInstance(context).markActive()
                             val pending = if (!incoming) AppCallTracker.consumeRecentPlacement(context, phone) else null
                             val name = pending?.displayName?.ifBlank { null }
                                 ?: activeDisplayName.ifBlank { null }

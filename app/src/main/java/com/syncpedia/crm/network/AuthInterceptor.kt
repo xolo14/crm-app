@@ -31,13 +31,26 @@ class AuthInterceptor(private val session: SessionManager) : Interceptor {
             )
 
         val token = session.getToken()
-        val request = if (!isPublicAuth && !token.isNullOrBlank()) {
+        val sentBearer = !isPublicAuth && !token.isNullOrBlank()
+        val request = if (sentBearer) {
             original.newBuilder()
                 .header("Authorization", "Bearer $token")
                 .build()
         } else {
             original
         }
-        return chain.proceed(request)
+        val response = chain.proceed(request)
+        // Keep the session alive: save the server's renewed token, but only if this request used
+        // the token still stored — never resurrect a session that was logged out mid-request.
+        val refreshed = response.header("X-Refreshed-Token")?.trim()
+        if (sentBearer && response.isSuccessful && !refreshed.isNullOrBlank() &&
+            refreshed.count { it == '.' } == 2 && token == session.getToken()
+        ) {
+            session.renewToken(refreshed)
+            if (com.syncpedia.crm.BuildConfig.DEBUG) {
+                android.util.Log.d("AuthInterceptor", "session renewed via $path")
+            }
+        }
+        return response
     }
 }

@@ -19,10 +19,13 @@ class SessionManager private constructor(ctx: Context) {
     private val gson = Gson()
     private val prefs: SharedPreferences = createSecurePrefs(appCtx)
 
+    /** Login: store the token and count signing in as activity. */
     fun saveToken(t: String) {
+        val now = System.currentTimeMillis()
         prefs.edit()
             .putString(KEY_TOKEN, t)
-            .putLong(KEY_TOKEN_TS, System.currentTimeMillis())
+            .putLong(KEY_TOKEN_TS, now)
+            .putLong(KEY_LAST_ACTIVE, now)
             .apply()
         // Prefer org_id from JWT claims when login payload omits it
         extractClaim(t, "org_id")?.let { org ->
@@ -33,6 +36,23 @@ class SessionManager private constructor(ctx: Context) {
     }
 
     fun getToken(): String? = prefs.getString(KEY_TOKEN, null)?.takeIf { it.isNotBlank() }
+
+    /** Server re-issued the token (X-Refreshed-Token). Not user activity — background syncs renew too. */
+    fun renewToken(t: String) {
+        prefs.edit()
+            .putString(KEY_TOKEN, t)
+            .putLong(KEY_TOKEN_TS, System.currentTimeMillis())
+            .apply()
+    }
+
+    /**
+     * The rep actually used the app (opened a screen or made a call). Checks the inactivity
+     * limit first, so a session that has already gone stale can't be revived by this.
+     */
+    fun markActive() {
+        if (!isLoggedIn()) return
+        prefs.edit().putLong(KEY_LAST_ACTIVE, System.currentTimeMillis()).apply()
+    }
 
     fun saveUser(u: UserInfo) {
         prefs.edit()
@@ -67,8 +87,11 @@ class SessionManager private constructor(ctx: Context) {
     fun isLoggedIn(): Boolean {
         val token = getToken()
         if (token.isNullOrEmpty()) return false
-        val ts = prefs.getLong(KEY_TOKEN_TS, 0L)
-        if (ts > 0L && System.currentTimeMillis() - ts > TOKEN_MAX_AGE_MS) {
+        // Signed out after INACTIVE_LIMIT_MS without real use. Falls back to the login time for
+        // sessions created before activity tracking existed.
+        val lastActive = prefs.getLong(KEY_LAST_ACTIVE, 0L)
+            .takeIf { it > 0L } ?: prefs.getLong(KEY_TOKEN_TS, 0L)
+        if (lastActive > 0L && System.currentTimeMillis() - lastActive > INACTIVE_LIMIT_MS) {
             clearSession()
             return false
         }
@@ -141,7 +164,9 @@ class SessionManager private constructor(ctx: Context) {
         private const val KEY_ORG_ID = "org_id"
         private const val KEY_ORG_NAME = "org_name"
         private const val KEY_SYNCED = "synced_ids"
-        private const val TOKEN_MAX_AGE_MS = 7L * 24L * 60L * 60L * 1000L
+        private const val KEY_LAST_ACTIVE = "last_active_ts"
+        /** Matches the server's MOBILE_TOKEN_IDLE_TTL (7 days). */
+        private const val INACTIVE_LIMIT_MS = 7L * 24L * 60L * 60L * 1000L
 
         /** Fires when the server rejects the token; MainActivity sends the user to login. */
         val sessionExpired = androidx.lifecycle.MutableLiveData<Long>()

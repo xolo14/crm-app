@@ -45,6 +45,8 @@ object RetrofitClient {
         val userAgent = Interceptor { chain ->
             val req = chain.request().newBuilder()
                 .header("User-Agent", "SyncpediaCRM-Android/1.0 (Android; okhttp)")
+                // Server issues the app 7-day sliding sessions (renewed via X-Refreshed-Token).
+                .header("X-Syncpedia-Client", "android")
                 .header("Accept", "application/json")
                 .build()
             chain.proceed(req)
